@@ -63,9 +63,10 @@ ParseResult DefImmutableMappingOp::parse(OpAsmParser& parser,
   while (parser.parseOptionalLSquare().succeeded()) {
     op_result = op_result || parser.parseOperand(key) || parser.parseArrow() ||
                 parser.parseOperand(value) || parser.parseRSquare();
-    auto parse_result = parser.parseOptionalComma();
     keys.push_back(key);
     values.push_back(value);
+    if (parser.parseOptionalComma().failed())
+      break;
   }
   Type result_type;
   op_result =
