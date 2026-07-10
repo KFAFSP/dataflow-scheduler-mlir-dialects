@@ -15,6 +15,9 @@ set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR ON)
 set(LLVM_LIT_ARGS "-sv" CACHE STRING "Default options for lit")
 
 if(PROJECT_IS_TOP_LEVEL)
+  # Treat all warnings as errors to prevent regressions.
+  add_compile_options(-Werror)
+
   # Find MLIR.
   find_package(MLIR REQUIRED CONFIG)
   message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
