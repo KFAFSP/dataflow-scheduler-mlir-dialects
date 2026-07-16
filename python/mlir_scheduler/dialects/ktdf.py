@@ -15,3 +15,5 @@
 #
 
 from ._ktdf_ops_gen import *
+from ._ktdf_enum_gen import *
+from .._mlir_libs._dataflow_scheduler_dialects_ktdf import *
