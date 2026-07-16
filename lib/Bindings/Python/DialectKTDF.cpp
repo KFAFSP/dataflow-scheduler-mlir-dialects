@@ -21,6 +21,7 @@
 #include <mlir/CAPI/IR.h>
 #include <nanobind/nanobind.h>
 
+#include "Utils.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDFAttributes.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDFDialect.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDFEnums.h"
@@ -29,52 +30,11 @@
 using namespace mlir::python::MLIR_BINDINGS_PYTHON_DOMAIN;
 namespace nb = nanobind;
 
-template <>
-struct nb::detail::type_caster<mlir::ktdf::LoopType> {
-  NB_TYPE_CASTER(mlir::ktdf::LoopType, const_name(MAKE_MLIR_PYTHON_QUALNAME(
-                                           "dialects.ktdf.LoopType")))
-
-  bool from_python(handle src, uint8_t, cleanup_list*) noexcept {
-    std::underlying_type_t<mlir::ktdf::LoopType> as_int;
-    if (!nb::try_cast(src, as_int)) return false;
-    value = static_cast<mlir::ktdf::LoopType>(as_int);
-    return true;
-  }
-
-  static handle from_cpp(mlir::ktdf::LoopType src, rv_policy,
-                         cleanup_list*) noexcept {
-    const auto as_int =
-        static_cast<std::underlying_type_t<mlir::ktdf::LoopType>>(src);
-
-    return nb::module_::import_(MAKE_MLIR_PYTHON_QUALNAME("dialects.ktdf"))
-        .attr("LoopType")(as_int)
-        .release();
-  }
-};
+IMPORT_INT_ENUM_TYPECASTER(ktdf, LoopType);
 
 namespace mlir::python::MLIR_BINDINGS_PYTHON_DOMAIN::ktdf {
 
-struct PyTokenType : PyConcreteType<PyTokenType> {
-  static auto isaFunction(MlirType type) -> bool {
-    return isa<mlir::ktdf::TokenType>(unwrap(type));
-  }
-  static auto getTypeIdFunction() -> MlirTypeID {
-    return wrap(mlir::ktdf::TokenType::getTypeID());
-  }
-  static constexpr const char* pyClassName = "TokenType";
-  using Base::Base;
-
-  static void bindDerived(ClassTy& c) {
-    c.def_static(
-        "get",
-        [](DefaultingPyMlirContext context) {
-          return PyTokenType(
-              context->getRef(),
-              wrap(mlir::ktdf::TokenType::get(unwrap(context.get()->get()))));
-        },
-        nb::arg("context").none() = nb::none());
-  }
-};
+DECLARE_SINGLETON_TYPE(ktdf, TokenType);
 
 struct PyFifoSlotType : PyConcreteType<PyFifoSlotType> {
   static auto isaFunction(MlirType type) -> bool {
@@ -84,6 +44,7 @@ struct PyFifoSlotType : PyConcreteType<PyFifoSlotType> {
     return wrap(mlir::ktdf::FifoSlotType::getTypeID());
   }
   static constexpr const char* pyClassName = "FifoSlotType";
+
   using Base::Base;
 
   static void bindDerived(ClassTy& c) {
@@ -127,6 +88,7 @@ struct PyLoopTypeAttr : PyConcreteAttribute<PyLoopTypeAttr> {
     return wrap(mlir::ktdf::LoopTypeAttr::getTypeID());
   }
   static constexpr const char* pyClassName = "LoopTypeAttr";
+
   using Base::Base;
 
   static void bindDerived(ClassTy& c) {
