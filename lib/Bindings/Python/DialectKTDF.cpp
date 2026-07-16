@@ -26,7 +26,6 @@
 #include "dataflow-scheduler/Dialect/KTDF/KTDFEnums.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDFTypes.h"
 
-using namespace mlir;
 using namespace mlir::python::MLIR_BINDINGS_PYTHON_DOMAIN;
 namespace nb = nanobind;
 
@@ -53,12 +52,14 @@ struct nb::detail::type_caster<mlir::ktdf::LoopType> {
   }
 };
 
+namespace mlir::python::MLIR_BINDINGS_PYTHON_DOMAIN::ktdf {
+
 struct PyTokenType : PyConcreteType<PyTokenType> {
   static auto isaFunction(MlirType type) -> bool {
-    return isa<ktdf::TokenType>(unwrap(type));
+    return isa<mlir::ktdf::TokenType>(unwrap(type));
   }
   static auto getTypeIdFunction() -> MlirTypeID {
-    return wrap(ktdf::TokenType::getTypeID());
+    return wrap(mlir::ktdf::TokenType::getTypeID());
   }
   static constexpr const char* pyClassName = "TokenType";
   using Base::Base;
@@ -69,7 +70,7 @@ struct PyTokenType : PyConcreteType<PyTokenType> {
         [](DefaultingPyMlirContext context) {
           return PyTokenType(
               context->getRef(),
-              wrap(ktdf::TokenType::get(unwrap(context.get()->get()))));
+              wrap(mlir::ktdf::TokenType::get(unwrap(context.get()->get()))));
         },
         nb::arg("context").none() = nb::none());
   }
@@ -77,10 +78,10 @@ struct PyTokenType : PyConcreteType<PyTokenType> {
 
 struct PyFifoSlotType : PyConcreteType<PyFifoSlotType> {
   static auto isaFunction(MlirType type) -> bool {
-    return isa<ktdf::FifoSlotType>(unwrap(type));
+    return isa<mlir::ktdf::FifoSlotType>(unwrap(type));
   }
   static auto getTypeIdFunction() -> MlirTypeID {
-    return wrap(ktdf::FifoSlotType::getTypeID());
+    return wrap(mlir::ktdf::FifoSlotType::getTypeID());
   }
   static constexpr const char* pyClassName = "FifoSlotType";
   using Base::Base;
@@ -92,7 +93,7 @@ struct PyFifoSlotType : PyConcreteType<PyFifoSlotType> {
            MlirType elementType) {
           return PyFifoSlotType(
               PyMlirContext::forContext(mlirTypeGetContext(elementType)),
-              wrap(ktdf::FifoSlotType::get(
+              wrap(mlir::ktdf::FifoSlotType::get(
                   unwrap(mlirTypeGetContext(elementType)), unwrap(src),
                   unwrap(dest), numElements, unwrap(elementType))));
         },
@@ -100,29 +101,30 @@ struct PyFifoSlotType : PyConcreteType<PyFifoSlotType> {
         nb::arg("elementType"));
 
     c.def_prop_ro("src", [](PyFifoSlotType self) {
-      return wrap(cast<ktdf::FifoSlotType>(unwrap(self)).getSrc());
+      return wrap(cast<mlir::ktdf::FifoSlotType>(unwrap(self)).getSrc());
     });
 
     c.def_prop_ro("dest", [](PyFifoSlotType self) {
-      return wrap(cast<ktdf::FifoSlotType>(unwrap(self)).getDest());
+      return wrap(cast<mlir::ktdf::FifoSlotType>(unwrap(self)).getDest());
     });
 
     c.def_prop_ro("numElements", [](PyFifoSlotType self) {
-      return cast<ktdf::FifoSlotType>(unwrap(self)).getNumElements();
+      return cast<mlir::ktdf::FifoSlotType>(unwrap(self)).getNumElements();
     });
 
     c.def_prop_ro("elementType", [](PyFifoSlotType self) {
-      return wrap(cast<ktdf::FifoSlotType>(unwrap(self)).getElementType());
+      return wrap(
+          cast<mlir::ktdf::FifoSlotType>(unwrap(self)).getElementType());
     });
   }
 };
 
 struct PyLoopTypeAttr : PyConcreteAttribute<PyLoopTypeAttr> {
   static auto isaFunction(MlirAttribute type) -> bool {
-    return isa<ktdf::LoopTypeAttr>(unwrap(type));
+    return isa<mlir::ktdf::LoopTypeAttr>(unwrap(type));
   }
   static auto getTypeIdFunction() -> MlirTypeID {
-    return wrap(ktdf::LoopTypeAttr::getTypeID());
+    return wrap(mlir::ktdf::LoopTypeAttr::getTypeID());
   }
   static constexpr const char* pyClassName = "LoopTypeAttr";
   using Base::Base;
@@ -130,23 +132,27 @@ struct PyLoopTypeAttr : PyConcreteAttribute<PyLoopTypeAttr> {
   static void bindDerived(ClassTy& c) {
     c.def_static(
         "get",
-        [](ktdf::LoopType value, DefaultingPyMlirContext context) {
-          return PyLoopTypeAttr(
-              context->getRef(),
-              wrap(ktdf::LoopTypeAttr::get(unwrap(context->get()), value)));
+        [](mlir::ktdf::LoopType value, DefaultingPyMlirContext context) {
+          return PyLoopTypeAttr(context->getRef(),
+                                wrap(mlir::ktdf::LoopTypeAttr::get(
+                                    unwrap(context->get()), value)));
         },
         nb::arg("value"), nb::arg("context").none() = nb::none());
 
     c.def_prop_ro("value", [](PyLoopTypeAttr self) {
-      return cast<ktdf::LoopTypeAttr>(unwrap(self)).getValue();
+      return cast<mlir::ktdf::LoopTypeAttr>(unwrap(self)).getValue();
     });
   }
 };
 
+}  // namespace mlir::python::MLIR_BINDINGS_PYTHON_DOMAIN::ktdf
+
 NB_MODULE(_dataflow_scheduler_dialects_ktdf, m) {
   m.def("register_dialect", [](MlirDialectRegistry registry) {
-    unwrap(registry)->insert<ktdf::KTDFDialect>();
+    unwrap(registry)->insert<mlir::ktdf::KTDFDialect>();
   });
+
+  using namespace mlir::python::MLIR_BINDINGS_PYTHON_DOMAIN::ktdf;
 
   PyTokenType::bind(m);
   PyFifoSlotType::bind(m);
