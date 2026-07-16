@@ -85,7 +85,9 @@ TEST_CASE("mlir::ktdf_arch::getLink*") {
     });
   };
 
-  for (auto [node_id, node] : nodes) {
+  for (const auto& pair : nodes) {
+    const auto node_id = pair.first;
+    const auto node = pair.second;
     INFO("node: ", node_id.str());
 
     auto expect_incoming =
@@ -117,7 +119,9 @@ TEST_CASE("mlir::ktdf_arch::getLink*") {
             node->getAttrOfType<TypedMapAttr<FlatSymbolRefAttr, ArrayAttr>>(
                 "expect_to");
         expect_to) {
-      for (auto [to, refs] : expect_to) {
+      for (const auto& pair2 : expect_to) {
+        const auto to = pair2.first;
+        const auto refs = pair2.second;
         INFO("to: ", to.getAttr().str());
         const auto expect = as_links(refs);
         const auto got = getLinks(node, nodes[to.getAttr()]);
