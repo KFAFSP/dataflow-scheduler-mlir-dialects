@@ -15,3 +15,4 @@
 #
 
 from ._ktdf_arch_ops_gen import *
+from .._mlir_libs._dataflow_scheduler_dialects_ktdf_arch import *

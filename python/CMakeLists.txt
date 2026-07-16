@@ -31,6 +31,7 @@ declare_mlir_python_sources(DataflowSchedulerDialectsPythonExtensions
   SOURCES
     _mlir_libs/_dataflow_scheduler_dialects/py.typed
     _mlir_libs/_dataflow_scheduler_dialects_ktdf/py.typed
+    _mlir_libs/_dataflow_scheduler_dialects_ktdf_arch/py.typed
 )
 
 declare_mlir_dialect_python_bindings(
@@ -127,6 +128,17 @@ declare_mlir_python_extension(DataflowSchedulerDialectsPythonExtensions.Dialects
     DataflowSchedulerDialects::KTDFDialect
 )
 
+declare_mlir_python_extension(DataflowSchedulerDialectsPythonExtensions.Dialects.KTDFArch.Nanobind
+  MODULE_NAME _dataflow_scheduler_dialects_ktdf_arch
+  ADD_TO_PARENT DataflowSchedulerDialectsPythonSources.Dialects.ktdf_arch
+  ROOT_DIR ${PYTHON_SOURCE_DIR}
+  SOURCES
+    DialectKTDFArch.cpp
+  PRIVATE_LINK_LIBS
+    LLVMSupport
+    DataflowSchedulerDialects::KTDFArchDialect
+)
+
 if(MLIR_PYTHON_STUBGEN_ENABLED)
   add_dataflow_scheduler_dialects_python_type_stubs(DataflowSchedulerDialectsPythonExtensions.Main
     ADD_TO_PARENT DataflowSchedulerDialectsPythonSources.type_stubs
@@ -147,6 +159,15 @@ if(MLIR_PYTHON_STUBGEN_ENABLED)
       DataflowSchedulerDialectsPythonModules.extension._dataflow_scheduler_dialects_ktdf.dso
     OUTPUTS
       _dataflow_scheduler_dialects_ktdf.pyi
+  )
+
+  add_dataflow_scheduler_dialects_python_type_stubs(DataflowSchedulerDialectsPythonExtensions.Dialects.KTDFArch.Nanobind
+    ADD_TO_PARENT DataflowSchedulerDialectsPythonSources.type_stubs
+    DEPENDS_TARGETS
+      DataflowSchedulerDialectsPythonModules.extension._mlir.dso
+      DataflowSchedulerDialectsPythonModules.extension._dataflow_scheduler_dialects_ktdf_arch.dso
+    OUTPUTS
+      _dataflow_scheduler_dialects_ktdf_arch.pyi
   )
 endif()
 
