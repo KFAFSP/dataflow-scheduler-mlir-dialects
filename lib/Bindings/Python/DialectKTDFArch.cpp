@@ -25,8 +25,11 @@
 #include <nanobind/make_iterator.h>
 #include <nanobind/nanobind.h>
 
+#include <optional>
+
 #include "Utils.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchInterfaces.h"
 
 using namespace mlir;
 using namespace mlir::python::MLIR_BINDINGS_PYTHON_DOMAIN;
@@ -116,6 +119,94 @@ struct PyMapAttr : PyConcreteAttribute<PyMapAttr> {
   }
 };
 
+struct PyResource : ktir::PyConcreteOpInterface<PyResource> {
+  static auto getInterfaceID() -> MlirTypeID {
+    return wrap(mlir::ktdf_arch::Resource::getInterfaceID());
+  }
+  static constexpr const char* pyClassName = "Resource";
+
+  using ktir::PyConcreteOpInterface<PyResource>::PyConcreteOpInterface;
+
+  static void bindDerived(ClassTy& c) {
+    c.def_prop_ro("kind", [](PyResource self) -> std::optional<MlirAttribute> {
+      if (self.isStatic()) {
+        throw nb::type_error("interface is static");
+      }
+      auto iface = cast<mlir::ktdf_arch::Resource>(
+          unwrap(nb::cast<PyOperation*>(self.getOperationObject())->get()));
+      if (const auto kind = iface.getKind(); kind) {
+        return wrap(kind);
+      }
+      return std::nullopt;
+    });
+
+    c.def_prop_rw(
+        "id",
+        [](PyResource self) -> std::optional<PyStringAttribute> {
+          if (self.isStatic()) {
+            throw nb::type_error("interface is static");
+          }
+          auto iface = cast<mlir::ktdf_arch::Resource>(
+              unwrap(nb::cast<PyOperation*>(self.getOperationObject())->get()));
+          if (const auto id = iface.getIdAttr(); id) {
+            return PyStringAttribute(
+                nb::cast<PyOperation*>(self.getOperationObject())->getContext(),
+                wrap(Attribute(id)));
+          }
+          return std::nullopt;
+        },
+        [](PyResource self, std::optional<PyStringAttribute> value) {
+          if (self.isStatic()) {
+            throw nb::type_error("interface is static");
+          }
+          auto iface = cast<mlir::ktdf_arch::Resource>(
+              unwrap(nb::cast<PyOperation*>(self.getOperationObject())->get()));
+          if (!value) {
+            iface.removeIdAttr();
+            return;
+          }
+          iface.setIdAttr(cast<StringAttr>(unwrap(value->get())));
+        });
+  }
+};
+
+struct PyLink : ktir::PyConcreteOpInterface<PyLink> {
+  static auto getInterfaceID() -> MlirTypeID {
+    return wrap(mlir::ktdf_arch::Link::getInterfaceID());
+  }
+  static constexpr const char* pyClassName = "Link";
+
+  using ktir::PyConcreteOpInterface<PyLink>::PyConcreteOpInterface;
+
+  static void bindDerived(ClassTy& c) {
+    c.def_prop_ro("sources", [](PyLink self) -> nb::typed<nb::list, MlirValue> {
+          if (self.isStatic()) {
+            throw nb::type_error("interface is static");
+          }
+          auto iface = cast<mlir::ktdf_arch::Link>(
+              unwrap(nb::cast<PyOperation*>(self.getOperationObject())->get()));
+          nb::list result;
+          for (auto value : iface.getSources()) {
+            result.append(nb::cast(wrap(value)));
+          }
+          return result;
+        });
+
+    c.def_prop_ro("targets", [](PyLink self) -> nb::typed<nb::list, MlirValue> {
+          if (self.isStatic()) {
+            throw nb::type_error("interface is static");
+          }
+          auto iface = cast<mlir::ktdf_arch::Link>(
+              unwrap(nb::cast<PyOperation*>(self.getOperationObject())->get()));
+          nb::list result;
+          for (auto value : iface.getTargets()) {
+            result.append(nb::cast(wrap(value)));
+          }
+          return result;
+        });
+  }
+};
+
 }  // namespace mlir::python::MLIR_BINDINGS_PYTHON_DOMAIN::ktdf_arch
 
 NB_MODULE(_dataflow_scheduler_dialects_ktdf_arch, m) {
@@ -130,4 +221,7 @@ NB_MODULE(_dataflow_scheduler_dialects_ktdf_arch, m) {
   PyPortType::bind(m);
 
   PyMapAttr::bind(m);
+
+  PyResource::bind(m);
+  PyLink::bind(m);
 }
