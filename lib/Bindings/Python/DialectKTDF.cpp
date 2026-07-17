@@ -99,7 +99,7 @@ struct PyLoopTypeAttr : PyConcreteAttribute<PyLoopTypeAttr> {
                                 wrap(mlir::ktdf::LoopTypeAttr::get(
                                     unwrap(context->get()), value)));
         },
-        nb::arg("value"), nb::arg("context").none() = nb::none());
+        nb::arg("value"), nb::arg("context") = nb::none());
 
     c.def_prop_ro("value", [](PyLoopTypeAttr self) {
       return cast<mlir::ktdf::LoopTypeAttr>(unwrap(self)).getValue();

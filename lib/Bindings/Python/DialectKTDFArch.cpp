@@ -63,7 +63,7 @@ struct PyMapAttr : PyConcreteAttribute<PyMapAttr> {
                            wrap(mlir::ktdf_arch::MapAttr::get(
                                unwrap(context->get()), entries)));
         },
-        nb::arg("dict"), nb::arg("context").none() = nb::none());
+        nb::arg("dict"), nb::arg("context") = nb::none());
 
     c.def(
         "getAttr",
