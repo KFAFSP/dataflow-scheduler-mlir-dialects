@@ -67,23 +67,12 @@ auto mlir::ktdf_arch::verifyLink(Operation* op) -> LogicalResult {
 // mlir::ktdf_arch::getFeature
 //===----------------------------------------------------------------------===//
 
-auto mlir::ktdf_arch::getFeature(Operation* op, Feature required)
+auto mlir::ktdf_arch::getFeature(Operation* op, const Feature& required)
     -> std::optional<Feature> {
-  // Find a provided feature of the same name and perform a simple test.
+  // Find a provided feature of the same name and perform a test.
   auto maybe_provided = getFeature(op, required.getName());
-  if (!maybe_provided) {
-    return std::nullopt;
-  }
-  if (maybe_provided->getValue() == required.getValue()) {
-    return maybe_provided;
-  }
-
-  // Delegate to the dialect that owns the feature to perform a more intricate
-  // feature test.
-  const auto* iface =
-      dyn_cast_if_present<FeatureDialectInterface>(required.getNameDialect());
-  if (iface && !iface->test(maybe_provided->getValue(), required)) {
-    return maybe_provided;
+  if (maybe_provided && required.matchedBy(maybe_provided->getValue())) {
+    return *maybe_provided;
   }
 
   return std::nullopt;
@@ -101,7 +90,7 @@ auto mlir::ktdf_arch::getFeature(Operation* op, StringRef name)
     return std::nullopt;
   }
 
-  return NamedAttribute(name, provided);
+  return Feature(name, provided);
 }
 
 auto mlir::ktdf_arch::getFeature(Operation* op, StringAttr name)
@@ -116,7 +105,7 @@ auto mlir::ktdf_arch::getFeature(Operation* op, StringAttr name)
     return std::nullopt;
   }
 
-  return NamedAttribute(name, provided);
+  return Feature(name, provided);
 }
 
 //===----------------------------------------------------------------------===//

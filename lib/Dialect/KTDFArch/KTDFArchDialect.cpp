@@ -26,6 +26,8 @@
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
 
+#include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchInterfaces.h"
+
 using namespace mlir;
 using namespace mlir::ktdf_arch;
 
@@ -102,6 +104,38 @@ struct KTDFArchFeatureDialectInterface : FeatureDialectInterface {
 };
 
 }  // namespace
+
+//===----------------------------------------------------------------------===//
+// Feature
+//===----------------------------------------------------------------------===//
+
+auto Feature::verify(Operation* op) const -> LogicalResult {
+  if (auto const* iface =
+          dyn_cast_if_present<FeatureDialectInterface>(getNameDialect());
+      iface) {
+    return iface->verify(op, *this);
+  }
+
+  return success();
+}
+
+auto Feature::matchedBy(Attribute provided) const -> bool {
+  if (provided == getValue() || (provided && isa<UnitAttr>(getValue()))) {
+    return true;
+  }
+
+  if (auto const* iface =
+          dyn_cast_if_present<FeatureDialectInterface>(getNameDialect());
+      iface) {
+    return iface->test(provided, *this);
+  }
+
+  return false;
+}
+
+auto Feature::matchedBy(Operation* op) const -> bool {
+  return getFeature(op, *this).has_value();
+}
 
 //===----------------------------------------------------------------------===//
 // KTDFArchDialect

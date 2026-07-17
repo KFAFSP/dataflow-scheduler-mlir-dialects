@@ -127,7 +127,7 @@ def KTDFArch_Resource : OpInterface<"Resource"> {
     //===------------------------------------------------------------------===//
 
     /// Gets the Feature that satisfies @p required , if any.
-    [[nodiscard]] auto getFeature(Feature required) -> std::optional<Feature> {
+    [[nodiscard]] auto getFeature(const Feature& required) -> std::optional<Feature> {
       return mlir::ktdf_arch::getFeature($_op, required);
     }
     /// Gets the Feature with @p name , if any.

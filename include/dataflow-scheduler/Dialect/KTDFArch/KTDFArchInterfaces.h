@@ -73,7 +73,7 @@ auto removeProperty(Operation* op) -> PropertyAttr {
 //===----------------------------------------------------------------------===//
 
 /// Gets the Feature of @p op that satisfies @p required , if any.
-[[nodiscard]] auto getFeature(Operation* op, Feature required)
+[[nodiscard]] auto getFeature(Operation* op, const Feature& required)
     -> std::optional<Feature>;
 /// Gets the Feature of @p op with @p name , if any.
 [[nodiscard]] auto getFeature(Operation* op, StringRef name)

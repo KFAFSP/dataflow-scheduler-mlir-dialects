@@ -31,7 +31,18 @@
 namespace mlir::ktdf_arch {
 
 /// Represents a provided or required architectural feature.
-using Feature = NamedAttribute;
+struct Feature : NamedAttribute {
+  /*implicit*/ Feature(const NamedAttribute& base) : NamedAttribute(base) {}
+  using NamedAttribute::NamedAttribute;
+
+  /// Verifies the usage of the feature on @p op .
+  auto verify(Operation* op) const -> LogicalResult;
+
+  /// Determines whether @p provided fulfills this requirement.
+  auto matchedBy(Attribute provided) const -> bool;
+  /// Determines whether @p op fulfills this requirement.
+  auto matchedBy(Operation* op) const -> bool;
+};
 
 /// Interface for dialects which define architectural features.
 struct FeatureDialectInterface
