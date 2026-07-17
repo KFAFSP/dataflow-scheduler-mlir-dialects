@@ -22,6 +22,7 @@
 #include <mlir/Bindings/Python/IRCore.h>
 #include <mlir/CAPI/IR.h>
 #include <mlir/IR/Attributes.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <nanobind/make_iterator.h>
 #include <nanobind/nanobind.h>
 
@@ -29,6 +30,7 @@
 
 #include "Utils.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchDialect.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchInterfaces.h"
 
 using namespace mlir;
@@ -180,30 +182,30 @@ struct PyLink : ktir::PyConcreteOpInterface<PyLink> {
 
   static void bindDerived(ClassTy& c) {
     c.def_prop_ro("sources", [](PyLink self) -> nb::typed<nb::list, MlirValue> {
-          if (self.isStatic()) {
-            throw nb::type_error("interface is static");
-          }
-          auto iface = cast<mlir::ktdf_arch::Link>(
-              unwrap(nb::cast<PyOperation*>(self.getOperationObject())->get()));
-          nb::list result;
-          for (auto value : iface.getSources()) {
-            result.append(nb::cast(wrap(value)));
-          }
-          return result;
-        });
+      if (self.isStatic()) {
+        throw nb::type_error("interface is static");
+      }
+      auto iface = cast<mlir::ktdf_arch::Link>(
+          unwrap(nb::cast<PyOperation*>(self.getOperationObject())->get()));
+      nb::list result;
+      for (auto value : iface.getSources()) {
+        result.append(nb::cast(wrap(value)));
+      }
+      return result;
+    });
 
     c.def_prop_ro("targets", [](PyLink self) -> nb::typed<nb::list, MlirValue> {
-          if (self.isStatic()) {
-            throw nb::type_error("interface is static");
-          }
-          auto iface = cast<mlir::ktdf_arch::Link>(
-              unwrap(nb::cast<PyOperation*>(self.getOperationObject())->get()));
-          nb::list result;
-          for (auto value : iface.getTargets()) {
-            result.append(nb::cast(wrap(value)));
-          }
-          return result;
-        });
+      if (self.isStatic()) {
+        throw nb::type_error("interface is static");
+      }
+      auto iface = cast<mlir::ktdf_arch::Link>(
+          unwrap(nb::cast<PyOperation*>(self.getOperationObject())->get()));
+      nb::list result;
+      for (auto value : iface.getTargets()) {
+        result.append(nb::cast(wrap(value)));
+      }
+      return result;
+    });
   }
 };
 
@@ -224,4 +226,77 @@ NB_MODULE(_dataflow_scheduler_dialects_ktdf_arch, m) {
 
   PyResource::bind(m);
   PyLink::bind(m);
+
+  nb::class_<mlir::ktdf_arch::Feature>(m, "Feature")
+      .def(
+          "__init__",
+          [](mlir::ktdf_arch::Feature* self, const PyStringAttribute& name,
+             MlirAttribute attr) {
+            new (self) mlir::ktdf_arch::Feature(
+                cast<StringAttr>(unwrap(name.get())), unwrap(attr));
+          },
+          nb::arg("name"), nb::arg("attr"))
+      .def(
+          "__init__",
+          [](mlir::ktdf_arch::Feature* self, const nb::str& name,
+             MlirAttribute attr) {
+            new (self) mlir::ktdf_arch::Feature(
+                StringAttr::get(unwrap(attr).getContext(), name.c_str()),
+                unwrap(attr));
+          },
+          nb::arg("name"), nb::arg("attr"))
+      .def_prop_ro(
+          "name",
+          [](const mlir::ktdf_arch::Feature& self) {
+            return PyStringAttribute(
+                PyMlirContext::forContext(wrap(self.getValue().getContext())),
+                wrap(Attribute(self.getName())));
+          })
+      .def_prop_ro("attr",
+                   [](const mlir::ktdf_arch::Feature& self) {
+                     return wrap(self.getValue());
+                   })
+      .def(
+          "verify",
+          [](const mlir::ktdf_arch::Feature& self, PyOperation& op) -> bool {
+            PyMlirContext::ErrorCapture errors(op.getContext());
+            if (failed(self.verify(unwrap(op.get())))) {
+              throw MLIRError("Verification failed", errors.take());
+            }
+            return true;
+          },
+          nb::arg("op"))
+      .def(
+          "matched_by",
+          [](const mlir::ktdf_arch::Feature& self, MlirAttribute provided)
+              -> bool { return self.matchedBy(unwrap(provided)); },
+          nb::arg("provided"))
+      .def(
+          "matched_by",
+          [](const mlir::ktdf_arch::Feature& self, const PyOperation& op)
+              -> bool { return self.matchedBy(unwrap(op.get())); },
+          nb::arg("op"))
+      .def("__eq__",
+           [](const mlir::ktdf_arch::Feature& lhs,
+              const mlir::ktdf_arch::Feature& rhs) { return lhs == rhs; });
+
+  m.def(
+      "get_feature",
+      [](const PyOperation& op, const nb::str& name) {
+        return mlir::ktdf_arch::getFeature(unwrap(op.get()), name.c_str());
+      },
+      nb::arg("op"), nb::arg("name"));
+  m.def(
+      "get_feature",
+      [](const PyOperation& op, const PyStringAttribute& name) {
+        return mlir::ktdf_arch::getFeature(
+            unwrap(op.get()), cast<StringAttr>(unwrap(name.get())));
+      },
+      nb::arg("op"), nb::arg("name"));
+  m.def(
+      "get_feature",
+      [](const PyOperation& op, const mlir::ktdf_arch::Feature& feature) {
+        return mlir::ktdf_arch::getFeature(unwrap(op.get()), feature);
+      },
+      nb::arg("op"), nb::arg("name"));
 }

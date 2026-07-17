@@ -8,14 +8,19 @@ test_source_root = Path(sys.argv[1])
 from mlir_scheduler.ir import (
     Context,
     DialectRegistry,
+    DictAttr,
     IntegerAttr,
     IntegerType,
     Module,
     Operation,
     StringAttr,
+    UnitAttr,
     WalkOrder,
     WalkResult,
 )
+import mlir_scheduler.ir
+
+MLIRError = mlir_scheduler.ir.MLIRError  # type: ignore
 import mlir_scheduler.dialects.ktdf_arch as ktdf_arch
 
 registry = DialectRegistry()
@@ -104,3 +109,27 @@ with ctx:
     assert datapath_link
     assert datapath_link.sources == [datapath.source]
     assert datapath_link.targets == [datapath.target]
+
+    # Feature
+    unit_queue = ktdf_arch.Feature("ktdf_arch.feature.queue", UnitAttr.get())
+    fifo = ktdf_arch.Feature(
+        "ktdf_arch.feature.queue",
+        DictAttr.get({"ordered": UnitAttr.get()}),
+    )
+    result = True
+    try:
+        result = fifo.verify(exec_unit.operation)
+    except MLIRError:
+        result = False
+    assert not result
+    assert fifo.verify(datapath.operation)
+    assert unit_queue.matched_by(fifo.attr)
+    assert not fifo.matched_by(unit_queue.attr)
+
+    # get_feature
+    assert ktdf_arch.get_feature(exec_unit.operation, "ktdf_arch.feature.queue") is None
+    queue_feature = ktdf_arch.get_feature(
+        datapath.operation, StringAttr.get("ktdf_arch.feature.queue")
+    )
+    assert queue_feature is not None
+    assert ktdf_arch.get_feature(datapath.operation, queue_feature) == queue_feature
