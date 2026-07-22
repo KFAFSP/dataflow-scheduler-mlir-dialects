@@ -17,9 +17,8 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFArchDialect
 
   DEPENDS
     DataflowSchedulerDialectsKTDFArchIncGen
-)
 
-mlir_target_link_libraries(DataflowSchedulerDialectsKTDFArchDialect PUBLIC
-  MLIRIR
-  MLIRControlFlowInterfaces
+  LINK_MLIR_LIBS
+    MLIRIR
+    MLIRControlFlowInterfaces  
 )

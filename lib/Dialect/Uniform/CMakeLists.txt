@@ -13,10 +13,9 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsUniformDialect
 
   LINK_LIBS PUBLIC
     DataflowSchedulerDialects::DataflowDialect
-)
 
-mlir_target_link_libraries(DataflowSchedulerDialectsUniformDialect PUBLIC
-  MLIRControlFlowInterfaces
-  MLIRIR
-  MLIRSideEffectInterfaces
+  LINK_MLIR_LIBS
+    MLIRControlFlowInterfaces
+    MLIRIR
+    MLIRSideEffectInterfaces
 )

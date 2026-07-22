@@ -14,9 +14,8 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFLoweringDia
 
   LINK_LIBS PUBLIC
     DataflowSchedulerDialects::KTDFDialect
-)
 
-mlir_target_link_libraries(DataflowSchedulerDialectsKTDFLoweringDialect PUBLIC
-  MLIRIR
-  MLIRControlFlowInterfaces
+  LINK_MLIR_LIBS
+    MLIRIR
+    MLIRControlFlowInterfaces
 )

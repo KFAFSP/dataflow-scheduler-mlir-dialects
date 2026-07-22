@@ -91,10 +91,11 @@ endmacro()
 
 # Creates a library target.
 function(add_dataflow_scheduler_dialects_library name)
-  cmake_parse_arguments(ARG "" "GROUP;EXPORT_NAME" "" ${ARGN})
+  cmake_parse_arguments(ARG "" "GROUP;EXPORT_NAME" "LINK_MLIR_LIBS" ${ARGN})
 
   add_mlir_library(${name} 
-    ${ARG_UNPARSED_ARGUMENTS} 
+    ${ARG_UNPARSED_ARGUMENTS}
+    ENABLE_AGGREGATION
     DISABLE_INSTALL 
     EXCLUDE_FROM_LIBMLIR
   )
@@ -114,6 +115,13 @@ function(add_dataflow_scheduler_dialects_library name)
       set(_qualified_name "${PROJECT_NAME}::${ARG_EXPORT_NAME}")
     endif()
     set_property(GLOBAL APPEND PROPERTY "DataflowSchedulerDialects_${ARG_GROUP}_LIBS" ${_qualified_name})
+  endif()
+
+  if(ARG_LINK_MLIR_LIBS)
+    mlir_target_link_libraries(${name} PUBLIC ${ARG_LINK_MLIR_LIBS})
+    get_mlir_filtered_link_libraries(_aggregate_deps ${ARG_LINK_MLIR_LIBS})
+    set_property(TARGET ${name} APPEND PROPERTY MLIR_AGGREGATE_DEPS
+      ${_aggregate_deps})
   endif()
 
   if(ARG_EXPORT_NAME)

@@ -11,13 +11,12 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsDataflowDialect
 
   DEPENDS
     DataflowSchedulerDialectsDataflowIncGen
-)
 
-mlir_target_link_libraries(DataflowSchedulerDialectsDataflowDialect PUBLIC
-  MLIRIR
-  MLIRSCFDialect
-  MLIRArithDialect
-  MLIRAffineDialect
-  MLIRAffineAnalysis
-  MLIRSCFDialect
+  LINK_MLIR_LIBS
+    MLIRIR
+    MLIRSCFDialect
+    MLIRArithDialect
+    MLIRAffineDialect
+    MLIRAffineAnalysis
+    MLIRSCFDialect
 )

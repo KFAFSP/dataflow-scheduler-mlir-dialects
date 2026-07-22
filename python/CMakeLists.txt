@@ -123,9 +123,10 @@ declare_mlir_python_extension(DataflowSchedulerDialectsPythonExtensions.Dialects
   ROOT_DIR ${PYTHON_SOURCE_DIR}
   SOURCES
     DialectKTDF.cpp
+  EMBED_CAPI_LINK_LIBS
+    DataflowSchedulerDialects::KTDFDialect
   PRIVATE_LINK_LIBS
     LLVMSupport
-    DataflowSchedulerDialects::KTDFDialect
 )
 
 declare_mlir_python_extension(DataflowSchedulerDialectsPythonExtensions.Dialects.KTDFArch.Nanobind
@@ -134,9 +135,10 @@ declare_mlir_python_extension(DataflowSchedulerDialectsPythonExtensions.Dialects
   ROOT_DIR ${PYTHON_SOURCE_DIR}
   SOURCES
     DialectKTDFArch.cpp
+  EMBED_CAPI_LINK_LIBS
+    DataflowSchedulerDialects::KTDFArchDialect
   PRIVATE_LINK_LIBS
     LLVMSupport
-    DataflowSchedulerDialects::KTDFArchDialect
 )
 
 if(MLIR_PYTHON_STUBGEN_ENABLED)

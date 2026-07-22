@@ -4,7 +4,7 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFDialect
     KTDFEnums.cpp
     KTDFOps.cpp
     KTDFTypes.cpp
-  
+
   ADDITIONAL_HEADER_DIRS
     ${DataflowScheduler_SOURCE_DIR}/include/dataflow-scheduler/Dialect/KTDF
     ${DataflowScheduler_BINARY_DIR}/include/dataflow-scheduler/Dialect/KTDF
@@ -14,12 +14,11 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFDialect
 
   DEPENDS
     DataflowSchedulerDialectsKTDFIncGen
-)
 
-mlir_target_link_libraries(DataflowSchedulerDialectsKTDFDialect PUBLIC
-  MLIRArithDialect
-  MLIRControlFlowInterfaces
-  MLIRDialectUtils
-  MLIRIR
-  MLIRSCFDialect
+  LINK_MLIR_LIBS
+    MLIRArithDialect
+    MLIRControlFlowInterfaces
+    MLIRDialectUtils
+    MLIRIR
+    MLIRSCFDialect
 )
