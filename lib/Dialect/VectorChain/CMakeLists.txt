@@ -13,9 +13,8 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsVectorChainDial
 
   LINK_LIBS PUBLIC
     DataflowSchedulerDialects::DataflowDialect
-)
-
-mlir_target_link_libraries(DataflowSchedulerDialectsVectorChainDialect PUBLIC
-  MLIRIR
-  MLIRSideEffectInterfaces
+  
+  LINK_MLIR_LIBS
+    MLIRIR
+    MLIRSideEffectInterfaces
 )

@@ -15,12 +15,12 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsAgenDialect
   LINK_LIBS PUBLIC
     DataflowSchedulerDialects::DataflowDialect
     DataflowSchedulerDialects::VectorChainDialect
+
+  LINK_MLIR_LIBS
+    MLIRIR
+    MLIRArithDialect
+    # These are used by Utils.cpp, but do not require dialect loading.
+    MLIRAffineDialect
+    MLIRAffineAnalysis
 )
 
-mlir_target_link_libraries(DataflowSchedulerDialectsAgenDialect PUBLIC
-  MLIRIR
-  MLIRArithDialect
-  # These are used by Utils.cpp, but do not require dialect loading.
-  MLIRAffineDialect
-  MLIRAffineAnalysis
-)
