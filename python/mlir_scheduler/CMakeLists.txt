@@ -13,6 +13,10 @@ if(MLIR_PYTHON_STUBGEN_ENABLED)
   list(APPEND _source_components MLIRPythonExtension.Core.type_stub_gen)
 endif()
 
+# NOTE: The MLIRPythonSupport module, which is compiled here implicitly, may 
+#       contain errors that we can't do anything about.
+add_compile_options(-Wno-error)
+
 add_mlir_python_common_capi_library(DataflowSchedulerDialectsPythonCAPI
   INSTALL_COMPONENT DataflowSchedulerDialectsPythonModules
   INSTALL_DESTINATION "${MLIR_BINDINGS_PYTHON_INSTALL_PREFIX}/_mlir_libs"
