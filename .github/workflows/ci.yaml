@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      artifact-repo:
+        description: "GitHub repo (owner/repo) to fetch the LLVM artifact from. Defaults to torch-spyre/ktir-mlir-frontend."
+        required: false
+        type: string
+
+jobs:
+  test:
+    name: Test (${{ matrix.config.name }})
+    runs-on: ubuntu-22.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { name: "Clang 21", cc: "clang-21", cxx: "clang++-21" }
+          - { name: "GCC 13",   cc: "gcc-13",   cxx: "g++-13" }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve artifact repo
+        id: config
+        run: |
+          ARTIFACT_REPO="${{ inputs.artifact-repo || 'torch-spyre/ktir-mlir-frontend' }}"
+          echo "artifact-repo=${ARTIFACT_REPO}" >> $GITHUB_OUTPUT
+
+      - name: Checkout artifact repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.config.outputs.artifact-repo }}
+          path: external/ktir-mlir-frontend
+
+      - name: Install dependencies
+        run: |
+          # clang-21 from LLVM apt (matches project's recommended clang >= 21.0.0)
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          sudo add-apt-repository \
+            "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-21 main"
+
+          # gcc-13 from toolchain PPA
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+          sudo apt-get update -q
+          sudo apt-get install -y ninja-build clang-21 clang-format-21 gcc-13 g++-13 python3
+
+      - name: Read LLVM hash
+        id: llvm
+        run: |
+          echo "hash=$(cat cmake/llvm-hash.txt)" >> $GITHUB_OUTPUT
+
+      - name: Cache MLIR
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ktir-mlir
+          key: mlir-static-${{ steps.llvm.outputs.hash }}
+
+      - name: Download MLIR
+        run: |
+          MLIR_DIR=$(python3 external/ktir-mlir-frontend/scripts/setup_mlir.py \
+            --hash "${{ steps.llvm.outputs.hash }}" \
+            --repo ${{ steps.config.outputs.artifact-repo }})
+          echo "MLIR_DIR=$MLIR_DIR" >> $GITHUB_ENV
+
+      - name: Install lit
+        run: pip install lit
+
+      - name: Install Python requirements
+        run: pip install -r python/requirements.txt
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=${{ matrix.config.cc }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.config.cxx }} \
+            -DBUILD_TESTING=ON \
+            -DMLIR_DIR=${{ env.MLIR_DIR }} \
+            -DLLVM_EXTERNAL_LIT=$(which lit) \
+            -DMLIR_PYTHON_STUBGEN_ENABLED=ON \
+            -DDataflowSchedulerDialects_ENABLE_PYTHON_BINDINGS=ON \
+            -DDataflowSchedulerDialects_ENABLE_TESTS=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: cmake --build build --target check-dataflow-scheduler-dialects
