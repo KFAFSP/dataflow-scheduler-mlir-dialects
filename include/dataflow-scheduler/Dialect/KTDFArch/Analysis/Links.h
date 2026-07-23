@@ -50,7 +50,7 @@ namespace mlir::ktdf_arch {
 // Endpoints
 //===----------------------------------------------------------------------===//
 
-/// Represents an endpoint of a leaf Resource.
+/// Represents an endpoint of a Node.
 class Endpoint : public OpResult {
  public:
   [[nodiscard]] static auto classof(Value value) -> bool {
@@ -58,32 +58,34 @@ class Endpoint : public OpResult {
     return result && classof(result);
   }
   [[nodiscard]] static auto classof(OpResult result) -> bool {
-    return llvm::isa<Resource>(result.getOwner()) &&
-           !llvm::isa<GroupOp>(result.getOwner());
+    return isa<Node>(result.getOwner());
   }
 
   using OpResult::OpResult;
 
-  [[nodiscard]] auto getOwner() -> Resource {
-    return cast<Resource>(OpResult::getOwner());
+  [[nodiscard]] auto getOwner() -> Node {
+    return cast<Node>(OpResult::getOwner());
   }
 };
 
 /// Tries to obtain the Endpoint defining @p value .
+///
+/// Consider using the cached NodeEndpoints analysis instead.
+///
+/// @retval nullptr   @p value does not trace back to an Endpoint.
+/// @retval Endpoint  Endpoint defining @p value .
 [[nodiscard]] auto getEndpoint(Value value) -> Endpoint;
 
-/// Tries to obtain the Resource of @p ResourceType defining @p value .
+/// Tries to obtain the Node of @p NodeType defining @p value .
 ///
-/// @retval nullptr       @p value is not an endpoint of a @p ResourceType .
-/// @retval ResourceType  Resource defining @p value .
-template <class ResourceType = Resource>
-[[nodiscard]] auto getResource(Value value) -> ResourceType {
-  static_assert(
-      std::is_same_v<ResourceType, Resource> ||
-      std::is_base_of_v<detail::ResourceTrait<ResourceType>, ResourceType>);
-
+/// Consider using the cached NodeEndpoints analysis instead.
+///
+/// @retval nullptr   @p value is not an endpoint of a @p NodeType .
+/// @retval NodeType  Node defining @p value .
+template <class NodeType = Node>
+[[nodiscard]] auto getNode(Value value) -> NodeType {
   if (auto endpoint = getEndpoint(value); endpoint) {
-    return dyn_cast<ResourceType>(endpoint.getOwner().getOperation());
+    return dyn_cast<NodeType>(endpoint.getOwner().getOperation());
   }
   return nullptr;
 }
@@ -186,6 +188,8 @@ template <class Callback>
 /// The @p callback must be an invocable returning either `void` or `bool`. If
 /// `false` is returned, the traversal is aborted and `false` is propagated,
 /// otherwise the result is `true`/`void`.
+///
+/// Consider using a LinkCollection cached by NodeLinks instead.
 template <class Callback, class ReturnType = typename llvm::function_traits<
                               std::remove_reference_t<Callback>>::result_t>
 auto visitLinks(Endpoint endpoint, Callback&& callback) -> ReturnType {
@@ -195,21 +199,14 @@ auto visitLinks(Endpoint endpoint, Callback&& callback) -> ReturnType {
     return result;
   }
 }
-/// Visits all Links attached to @p resource .
+/// Visits all Links attached to @p node .
 ///
 /// See visitLinks(Endpoint, auto&&) for more information on the callback.
 template <class Callback, class ReturnType = typename llvm::function_traits<
                               std::remove_reference_t<Callback>>::result_t>
-auto visitLinks(Resource resource, Callback&& callback) -> ReturnType {
-  if (isa<GroupOp>(resource)) {
-    if constexpr (!std::is_void_v<ReturnType>) {
-      return true;
-    } else {
-      return;
-    }
-  }
+auto visitLinks(Node node, Callback&& callback) -> ReturnType {
   return llvm::all_of(
-      resource->getResults(),
+      node->getResults(),
       [invoke = detail::makeLinkVisitor(std::forward<Callback>(callback))](
           OpResult endpoint) -> bool {
         return detail::visitLinks(cast<Endpoint>(endpoint), invoke);
@@ -242,8 +239,7 @@ auto visitLinks(Endpoint source, Endpoint target, Callback&& callback)
 /// See visitLinks(Endpoint, auto&&) for more information on the callback.
 template <class Callback, class ReturnType = typename llvm::function_traits<
                               std::remove_reference_t<Callback>>::result_t>
-auto visitLinks(Resource source, Resource target, Callback&& callback)
-    -> ReturnType {
+auto visitLinks(Node source, Node target, Callback&& callback) -> ReturnType {
   return visitLinks(
       source,
       [invoke = detail::makeLinkVisitor(std::forward<Callback>(callback)),
@@ -252,7 +248,7 @@ auto visitLinks(Resource source, Resource target, Callback&& callback)
           return true;
         }
         for (auto value : link.getTargets()) {
-          if (getResource(value) == target) {
+          if (getNode(value) == target) {
             return invoke(link, direction);
           }
         }
@@ -265,6 +261,8 @@ auto visitLinks(Resource source, Resource target, Callback&& callback)
 /// The first argument may be convertible to LinkDirection, in which case it
 /// filters the direction of the collected links. All other arguments are
 /// forwarded to visitLinks().
+///
+/// Consider using a LinkCollection cached by NodeLinks instead.
 template <class LinkType = Link, class Head, class... Tail>
 void getLinks(SmallVectorImpl<LinkType>& result, Head&& head, Tail&&... tail) {
   if constexpr (std::is_convertible_v<Head, LinkDirection>) {
@@ -288,6 +286,8 @@ void getLinks(SmallVectorImpl<LinkType>& result, Head&& head, Tail&&... tail) {
 /// Collects Links.
 ///
 /// See getLinks(SmallVectorImpl<LinkType>&, auto&&, auto&&...) for more info.
+///
+/// Consider using a LinkCollection cached by NodeLinks instead.
 template <class LinkType = Link, class Head, class... Tail>
 [[nodiscard]] auto getLinks(Head&& head, Tail&&... tail)
     -> std::enable_if_t<!std::is_base_of_v<llvm::SmallVectorImpl<LinkType>,

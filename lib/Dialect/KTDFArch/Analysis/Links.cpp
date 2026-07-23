@@ -48,7 +48,7 @@ auto mlir::ktdf_arch::getEndpoint(Value value) -> Endpoint {
         continue;
       }
 
-      if (isa<Resource>(result.getOwner())) {
+      if (isa<Node>(result.getOwner())) {
         return cast<Endpoint>(result);
       }
     }

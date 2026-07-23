@@ -361,7 +361,7 @@ class KTDFArch_NodeOp<
   dag inherentAttrs = (ins)
 > : KTDFArch_ResourceOp<
   mnemonic, 
-  traits # [OpAsmOpInterface], 
+  traits # [KTDFArch_Node, OpAsmOpInterface], 
   inherentAttrs
 > {
   // By default, every resource returns a single SSA value of its type.

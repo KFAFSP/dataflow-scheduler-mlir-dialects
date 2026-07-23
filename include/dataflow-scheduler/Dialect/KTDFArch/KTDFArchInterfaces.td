@@ -152,6 +152,17 @@ def KTDFArch_Resource : OpInterface<"Resource"> {
   }];
 }
 
+def KTDFArch_Node : OpInterface<"Node", [KTDFArch_Resource]> {
+  let cppNamespace = "::mlir::ktdf_arch";
+  let description = [{
+    Interface for a resource that declares endpoints in the architecture graph.
+
+    WARNING: At the moment, this interface should not be implemented by foreign
+             operations. Only the operations defined in the `ktdf_arch` dialect
+             are supposed to implement it.
+  }];
+}
+
 def KTDFArch_Link : OpInterface<"Link", [KTDFArch_Resource]> {
   let cppNamespace = "::mlir::ktdf_arch";
   let description = [{

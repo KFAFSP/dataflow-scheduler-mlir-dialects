@@ -102,6 +102,14 @@ with ctx:
     memory_res.id = new_memory_id
     assert memory.id == new_memory_id
 
+    # Node
+    assert ktdf_arch.Node(memory)
+    try:
+        ktdf_arch.Node(datapath)
+        assert False
+    except ValueError:
+        pass
+
     # Link
     assert exec_unit is not None
     assert datapath is not None

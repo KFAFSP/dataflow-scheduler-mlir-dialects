@@ -54,3 +54,11 @@ inline auto parse(MLIRContext* context, StringRef filename)
   REQUIRE(module);
   return module;
 }
+
+template <class T>
+[[nodiscard]] inline auto unorderedEquals(SmallVector<T> lhs,
+                                          SmallVector<T> rhs) -> bool {
+  llvm::sort(lhs);
+  llvm::sort(rhs);
+  return lhs == rhs;
+}

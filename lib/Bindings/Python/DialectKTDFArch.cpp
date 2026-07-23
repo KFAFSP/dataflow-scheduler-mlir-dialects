@@ -172,6 +172,17 @@ struct PyResource : ktir::PyConcreteOpInterface<PyResource> {
   }
 };
 
+struct PyNode : ktir::PyConcreteOpInterface<PyNode> {
+  static auto getInterfaceID() -> MlirTypeID {
+    return wrap(mlir::ktdf_arch::Node::getInterfaceID());
+  }
+  static constexpr const char* pyClassName = "Node";
+
+  using ktir::PyConcreteOpInterface<PyNode>::PyConcreteOpInterface;
+
+  static void bindDerived(ClassTy& /*c*/) {}
+};
+
 struct PyLink : ktir::PyConcreteOpInterface<PyLink> {
   static auto getInterfaceID() -> MlirTypeID {
     return wrap(mlir::ktdf_arch::Link::getInterfaceID());
@@ -225,6 +236,7 @@ NB_MODULE(_dataflow_scheduler_dialects_ktdf_arch, m) {
   PyMapAttr::bind(m);
 
   PyResource::bind(m);
+  PyNode::bind(m);
   PyLink::bind(m);
 
   nb::class_<mlir::ktdf_arch::Feature>(m, "Feature")

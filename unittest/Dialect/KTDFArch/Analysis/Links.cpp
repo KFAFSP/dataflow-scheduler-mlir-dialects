@@ -20,11 +20,14 @@
 
 #include <doctest/doctest.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 
 #include "Utils.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"
@@ -35,15 +38,49 @@ using namespace mlir::ktdf_arch;
 
 namespace {
 
-template <class T>
-[[nodiscard]] auto unorderedEquals(SmallVector<T> lhs, SmallVector<T> rhs)
-    -> bool {
-  llvm::sort(lhs);
-  llvm::sort(rhs);
-  return lhs == rhs;
-}
+struct Fixture {
+  explicit Fixture(MLIRContext& context);
+
+  auto asLinks(ArrayAttr attr_or_null) -> SmallVector<Link>;
+
+  OwningOpRef<ModuleOp> module;
+  DeviceOp device;
+  DenseMap<StringAttr, Node> nodes;
+  DenseMap<StringAttr, Link> links;
+};
 
 }  // namespace
+
+Fixture::Fixture(MLIRContext& context) {
+  // Construct and parse the test MLIR program.
+  module = parse(&context, INPUTS_DIR "links.mlir");
+  device = *module->getOps<DeviceOp>().begin();
+
+  device.walk([&](Resource resource) {
+    if (auto link = dyn_cast<Link>(resource.getOperation()); link) {
+      if (const auto id_attr = link.getIdAttr(); id_attr) {
+        links[id_attr] = link;
+      }
+      return;
+    }
+    if (auto node = dyn_cast<Node>(resource.getOperation()); node) {
+      if (const auto id_attr = node.getIdAttr(); id_attr) {
+        nodes[id_attr] = node;
+      }
+    }
+  });
+}
+
+auto Fixture::asLinks(ArrayAttr attr_or_null) -> SmallVector<Link> {
+  if (!attr_or_null) {
+    return {};
+  }
+
+  return llvm::map_to_vector(attr_or_null, [&](Attribute attr) -> Link {
+    const auto link_ref = cast<FlatSymbolRefAttr>(attr);
+    return links[link_ref.getAttr()];
+  });
+};
 
 TEST_CASE("mlir::ktdf_arch::getLink*") {
   // Setup an MLIR context.
@@ -53,47 +90,17 @@ TEST_CASE("mlir::ktdf_arch::getLink*") {
   context.allowUnregisteredDialects();
   context.loadAllAvailableDialects();
 
-  // Construct and parse the test MLIR program.
-  auto module = parse(&context, INPUTS_DIR "links.mlir");
-  auto device = *module->getOps<DeviceOp>().begin();
+  Fixture fixture(context);
 
-  DenseMap<StringAttr, Resource> nodes;
-  DenseMap<StringAttr, Link> links;
-  device.walk([&](Resource node) {
-    if (auto link = dyn_cast<Link>(node.getOperation()); link) {
-      if (const auto id_attr = link.getIdAttr(); id_attr) {
-        links[id_attr] = link;
-      }
-      return;
-    }
-    if (isa<GroupOp>(node)) {
-      return;
-    }
-    if (const auto id_attr = node.getIdAttr(); id_attr) {
-      nodes[id_attr] = node;
-    }
-  });
-
-  const auto as_links = [&](ArrayAttr attr_or_null) -> SmallVector<Link> {
-    if (!attr_or_null) {
-      return {};
-    }
-
-    return llvm::map_to_vector(attr_or_null, [&](Attribute attr) -> Link {
-      const auto link_ref = cast<FlatSymbolRefAttr>(attr);
-      return links[link_ref.getAttr()];
-    });
-  };
-
-  for (const auto& pair : nodes) {
+  for (const auto& pair : fixture.nodes) {
     const auto node_id = pair.first;
     const auto node = pair.second;
     INFO("node: ", node_id.str());
 
     auto expect_incoming =
-        as_links(node->getAttrOfType<ArrayAttr>("expect_incoming"));
+        fixture.asLinks(node->getAttrOfType<ArrayAttr>("expect_incoming"));
     auto expect_outgoing =
-        as_links(node->getAttrOfType<ArrayAttr>("expect_outgoing"));
+        fixture.asLinks(node->getAttrOfType<ArrayAttr>("expect_outgoing"));
     auto expect =
         llvm::to_vector(llvm::concat<Link>(expect_incoming, expect_outgoing));
 
@@ -123,11 +130,11 @@ TEST_CASE("mlir::ktdf_arch::getLink*") {
         const auto to = pair2.first;
         const auto refs = pair2.second;
         INFO("to: ", to.getAttr().str());
-        const auto expect = as_links(refs);
-        const auto got = getLinks(node, nodes[to.getAttr()]);
+        const auto expect = fixture.asLinks(refs);
+        const auto got = getLinks(node, fixture.nodes[to.getAttr()]);
         CHECK(unorderedEquals(got, expect));
         if (got.size() == 1) {
-          CHECK(getLink(node, nodes[to.getAttr()]) == got.front());
+          CHECK(getLink(node, fixture.nodes[to.getAttr()]) == got.front());
         }
       }
     }
