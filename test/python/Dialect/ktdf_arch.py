@@ -141,3 +141,12 @@ with ctx:
     )
     assert queue_feature is not None
     assert ktdf_arch.get_feature(datapath.operation, queue_feature) == queue_feature
+
+    # get_endpoint
+    assert ktdf_arch.get_endpoint(datapath.source) == memory.result
+
+    # get_node
+    source_node = ktdf_arch.get_node(datapath.source)
+    assert source_node is not None
+    assert source_node.operation == memory_res.operation
+

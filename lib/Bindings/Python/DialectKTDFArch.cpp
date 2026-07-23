@@ -29,6 +29,7 @@
 #include <optional>
 
 #include "Utils.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/Analysis/NodeEndpoints.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchDialect.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchInterfaces.h"
@@ -311,4 +312,29 @@ NB_MODULE(_dataflow_scheduler_dialects_ktdf_arch, m) {
         return mlir::ktdf_arch::getFeature(unwrap(op.get()), feature);
       },
       nb::arg("op"), nb::arg("name"));
+
+  m.def(
+      "get_endpoint",
+      [](MlirValue value) -> std::optional<MlirValue> {
+        if (const auto endpoint = mlir::ktdf_arch::getEndpoint(unwrap(value));
+            endpoint) {
+          return wrap(endpoint);
+        }
+        return std::nullopt;
+      },
+      nb::arg("value"));
+
+  m.def(
+      "get_node",
+      [](MlirValue value) -> std::optional<PyNode> {
+        if (const auto node = mlir::ktdf_arch::getNode(unwrap(value)); node) {
+          auto op = PyOperation::forOperation(
+              PyMlirContext::forContext(mlirValueGetContext(value)),
+              wrap(node));
+          return PyNode(op->createOpView(),
+                        DefaultingPyMlirContext(*op->getContext().get()));
+        }
+        return std::nullopt;
+      },
+      nb::arg("value"));
 }
