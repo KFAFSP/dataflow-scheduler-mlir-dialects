@@ -30,6 +30,7 @@
 
 #include "Utils.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/Analysis/NodeEndpoints.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/Analysis/NodeLinks.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchDialect.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchInterfaces.h"
@@ -337,4 +338,43 @@ NB_MODULE(_dataflow_scheduler_dialects_ktdf_arch, m) {
         return std::nullopt;
       },
       nb::arg("value"));
+
+  nb::enum_<mlir::ktdf_arch::LinkDirection>(m, "LinkDirection")
+      .value("IN", mlir::ktdf_arch::LinkDirection::Incoming)
+      .value("OUT", mlir::ktdf_arch::LinkDirection::Outgoing)
+      .value("BIDI", mlir::ktdf_arch::LinkDirection::Bidirectional)
+      .def("__or__",
+           [](mlir::ktdf_arch::LinkDirection lhs,
+              mlir::ktdf_arch::LinkDirection rhs) { return lhs | rhs; })
+      .def("__and__",
+           [](mlir::ktdf_arch::LinkDirection lhs,
+              mlir::ktdf_arch::LinkDirection rhs) { return lhs & rhs; })
+      .def("__xor__",
+           [](mlir::ktdf_arch::LinkDirection lhs,
+              mlir::ktdf_arch::LinkDirection rhs) { return lhs ^ rhs; })
+      .def("__invert__",
+           [](mlir::ktdf_arch::LinkDirection self) { return ~self; });
+
+  m.def(
+      "visit_links",
+      [](PyNode node,
+         nb::typed<nb::callable, bool(PyLink, mlir::ktdf_arch::LinkDirection)>
+             visit) -> bool {
+        auto iface = cast<mlir::ktdf_arch::Node>(
+            unwrap(nb::cast<PyOperation*>(node.getOperationObject())->get()));
+
+        return mlir::ktdf_arch::visitLinks(
+            iface,
+            [&](mlir::ktdf_arch::Link link,
+                mlir::ktdf_arch::LinkDirection direction) -> bool {
+              auto op = PyOperation::forOperation(
+                  PyMlirContext::forContext(wrap(link->getContext())),
+                  wrap(link));
+              return nb::cast<bool>(visit(
+                  PyLink(op->createOpView(),
+                         DefaultingPyMlirContext(*op->getContext().get())),
+                  direction));
+            });
+      },
+      nb::arg("node"), nb::arg("visit"));
 }

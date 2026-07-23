@@ -150,3 +150,18 @@ with ctx:
     assert source_node is not None
     assert source_node.operation == memory_res.operation
 
+    # visit_links
+    def get_links(
+        node: ktdf_arch.Node,
+    ) -> list[tuple[ktdf_arch.Link, ktdf_arch.LinkDirection]]:
+        result = []
+        ktdf_arch.visit_links(
+            node, lambda link, dir: result.append((link, dir)) or True
+        )
+        return result
+
+    links = get_links(source_node)
+    assert len(links) == 1
+    assert links[0][0].operation == datapath.operation
+    assert (links[0][1] & ktdf_arch.LinkDirection.OUT) == ktdf_arch.LinkDirection.OUT
+
