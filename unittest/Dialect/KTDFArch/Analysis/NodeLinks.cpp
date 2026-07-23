@@ -16,7 +16,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "dataflow-scheduler/Dialect/KTDFArch/Analysis/Links.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/Analysis/NodeLinks.h"
 
 #include <doctest/doctest.h>
 #include <llvm/ADT/STLExtras.h>
@@ -138,5 +138,39 @@ TEST_CASE("mlir::ktdf_arch::getLink*") {
         }
       }
     }
+  }
+}
+
+TEST_CASE("mlir::ktdf_arch::NodeLinks") {
+  // Setup an MLIR context.
+  DialectRegistry registry;
+  registry.insert<ktdf_arch::KTDFArchDialect>();
+  MLIRContext context(registry);
+  context.allowUnregisteredDialects();
+  context.loadAllAvailableDialects();
+
+  Fixture fixture(context);
+
+  NodeLinks analysis;
+
+  for (const auto& entry : fixture.nodes) {
+    const auto node_id = entry.first;
+    const auto node = entry.second;
+    INFO("node: ", node_id.str());
+
+    auto expect_incoming =
+        fixture.asLinks(node->getAttrOfType<ArrayAttr>("expect_incoming"));
+    auto expect_outgoing =
+        fixture.asLinks(node->getAttrOfType<ArrayAttr>("expect_outgoing"));
+    auto expect =
+        llvm::to_vector(llvm::concat<Link>(expect_incoming, expect_outgoing));
+
+    const auto& links = analysis[node];
+
+    CHECK(
+        unorderedEquals(expect_incoming, llvm::to_vector(links.getIncoming())));
+    CHECK(
+        unorderedEquals(expect_outgoing, llvm::to_vector(links.getOutgoing())));
+    CHECK(unorderedEquals(expect, llvm::to_vector(links)));
   }
 }
