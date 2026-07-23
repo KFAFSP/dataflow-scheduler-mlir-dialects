@@ -62,7 +62,7 @@ auto ResourceIds::assign(Resource resource, StringAttr id) -> bool {
     return true;
   }
 
-  // Can't override an identifier that is already in-use by someone else.
+  // Can't override an identifier that is already in use by someone else.
   if (const auto existing = map_.lookup(id); existing) {
     return existing == resource;
   }

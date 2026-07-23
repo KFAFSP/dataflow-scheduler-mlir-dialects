@@ -53,8 +53,8 @@ TEST_CASE("mlir::ktdf_arch::ResourceIds") {
   auto& resources = analysis_manager.getChildAnalysis<ResourceIds>(device);
 
   SUBCASE("lookup(StringRef)") {
-    CHECK_FALSE(resources.lookup("exec_unit"));
-    CHECK(resources.lookup("exec_unit_1"));
+    CHECK_FALSE(resources["exec_unit"]);
+    CHECK(resources["exec_unit_1"]);
   }
 
   SUBCASE("assign(Resource, StringAttr{}) on foreign resource") {
@@ -62,32 +62,32 @@ TEST_CASE("mlir::ktdf_arch::ResourceIds") {
   }
 
   SUBCASE("assign(Resource, StringRef) same name") {
-    auto resource = resources.lookup("exec_unit_1");
+    auto resource = resources["exec_unit_1"];
 
     CHECK(resources.assign(resource, "exec_unit_1"));
     CHECK_EQ(resource.getId(), "exec_unit_1");
-    CHECK_EQ(resources.lookup("exec_unit_1"), resource);
+    CHECK_EQ(resources["exec_unit_1"], resource);
   }
 
   SUBCASE("assign(Resource, StringRef) conflict") {
-    auto resource = resources.lookup("exec_unit_1");
+    auto resource = resources["exec_unit_1"];
     auto group = *device.getBody()->getOps<GroupOp>().begin();
     const auto group_id = resources.getOrAssign(group);
 
     CHECK_FALSE(resources.assign(resource, group_id));
     CHECK_EQ(resource.getId(), "exec_unit_1");
-    CHECK_EQ(resources.lookup("exec_unit_1"), resource);
+    CHECK_EQ(resources["exec_unit_1"], resource);
     CHECK_EQ(group.getIdAttr(), group_id);
-    CHECK_EQ(resources.lookup(group_id), group);
+    CHECK_EQ(resources[group_id], group);
   }
 
   SUBCASE("assign(Resource, StringRef) rename") {
-    auto resource = resources.lookup("exec_unit_1");
+    auto resource = resources["exec_unit_1"];
 
     CHECK(resources.assign(resource, "exec_unit_2"));
     CHECK_EQ(resource.getId(), "exec_unit_2");
-    CHECK_FALSE(resources.lookup("exec_unit_1"));
-    CHECK_EQ(resources.lookup("exec_unit_2"), resource);
+    CHECK_FALSE(resources["exec_unit_1"]);
+    CHECK_EQ(resources["exec_unit_2"], resource);
   }
 
   SUBCASE("getOrAssign(Resource) on foreign resource") {
