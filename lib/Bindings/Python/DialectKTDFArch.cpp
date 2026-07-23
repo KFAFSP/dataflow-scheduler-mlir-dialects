@@ -29,6 +29,7 @@
 #include <optional>
 
 #include "Utils.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/Analysis/DeviceManager.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/Analysis/NodeEndpoints.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/Analysis/NodeLinks.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"
@@ -377,4 +378,46 @@ NB_MODULE(_dataflow_scheduler_dialects_ktdf_arch, m) {
             });
       },
       nb::arg("node"), nb::arg("visit"));
+
+  nb::class_<mlir::ktdf_arch::Device>(m, "Device")
+      .def(
+          "__init__",
+          [](mlir::ktdf_arch::Device* self, MlirOperation op) {
+            auto decl = dyn_cast<mlir::ktdf_arch::DeviceOp>(unwrap(op));
+            if (!decl) {
+              throw nanobind::value_error(
+                  Twine("expected '")
+                      .concat(mlir::ktdf_arch::DeviceOp::getOperationName())
+                      .concat("' op")
+                      .str()
+                      .c_str());
+            }
+
+            new (self) mlir::ktdf_arch::Device(decl);
+
+            if (!*self) {
+              throw MLIRError("unable to import device");
+            }
+          },
+          nb::arg("op"))
+      .def_prop_ro(
+          "declaration",
+          [](const mlir::ktdf_arch::Device& device) {
+            return PyOperation::forOperation(
+                       PyMlirContext::forContext(wrap(device.getContext())),
+                       wrap(device.getDeclaration()))
+                ->createOpView();
+          },
+          nb::sig("def (self: Device, /) -> " MAKE_MLIR_PYTHON_QUALNAME(
+              "dialects.ktdf_arch.DeviceOp")))
+      .def_prop_ro(
+          "definition",
+          [](const mlir::ktdf_arch::Device& device) {
+            return PyOperation::forOperation(
+                       PyMlirContext::forContext(wrap(device.getContext())),
+                       wrap(device.getDefinition()))
+                ->createOpView();
+          },
+          nb::sig("def (self: Device, /) -> " MAKE_MLIR_PYTHON_QUALNAME(
+              "dialects.ktdf_arch.DeviceOp")));
 }

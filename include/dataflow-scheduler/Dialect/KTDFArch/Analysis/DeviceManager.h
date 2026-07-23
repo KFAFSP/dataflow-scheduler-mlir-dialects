@@ -80,6 +80,10 @@ class Device : private DeviceOp {
   using DeviceOp::getNameAttr;
   using DeviceOp::getVersion;
 
+  [[nodiscard]] auto getContext() const -> MLIRContext* {
+    return getDeclaration()->getContext();
+  }
+
   [[nodiscard]] auto getAttr(StringRef name) const -> Attribute {
     return getDefinition()->getAttr(name);
   }

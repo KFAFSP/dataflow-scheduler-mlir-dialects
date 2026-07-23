@@ -165,3 +165,7 @@ with ctx:
     assert links[0][0].operation == datapath.operation
     assert (links[0][1] & ktdf_arch.LinkDirection.OUT) == ktdf_arch.LinkDirection.OUT
 
+    # Device
+    device = ktdf_arch.Device(module.body.operations[0].operation)
+    assert device.declaration == module.body.operations[0].operation
+    assert device.definition == device.declaration
