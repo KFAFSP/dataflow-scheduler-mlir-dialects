@@ -139,6 +139,22 @@ def DefImmutableMappingOp : Uniform_Op<"def_immutable_mapping",
   let extraClassDeclaration = [{
     /// Returns the value mapped to \p key, or std::nullopt if absent.
     std::optional<Value> getValue(Value key);
+
+    llvm::DenseMap<Value, Value> toMap();
+
+    void getValuesFromKeys(ValueRange keys, SmallVectorImpl<std::optional<Value>> &result);
+    SmallVector<std::optional<Value>> getValuesFromKeys(ValueRange keys) {
+      SmallVector<std::optional<Value>> result;
+      getValuesFromKeys(keys, result);
+      return result;
+    }
+    
+    void getNonNullValuesFromKeys(ValueRange keys, SmallVectorImpl<Value> &result);
+    SmallVector<Value> getNonNullValuesFromKeys(ValueRange keys) {
+      SmallVector<Value> result;
+      getNonNullValuesFromKeys(keys, result);
+      return result;
+    }
   }];
 
   let hasVerifier = 1;

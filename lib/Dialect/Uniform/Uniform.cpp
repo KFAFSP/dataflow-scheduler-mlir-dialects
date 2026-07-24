@@ -24,6 +24,7 @@
 
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/DialectImplementation.h>
+#include <mlir/Support/LLVM.h>
 
 #include "dataflow-scheduler/Dialect/Dataflow/Dataflow.h"
 #include "dataflow-scheduler/Dialect/OpTraits.h"
@@ -521,6 +522,36 @@ std::optional<Value> DefImmutableMappingOp::getValue(Value key) {
     }
   }
   return std::nullopt;
+}
+
+DenseMap<Value, Value> DefImmutableMappingOp::toMap() {
+  DenseMap<Value, Value> result;
+  for (auto [key, value] : llvm::zip(getKeys(), getValues())) {
+    result[key] = value;
+  }
+  return result;
+}
+
+void DefImmutableMappingOp::getValuesFromKeys(
+    ValueRange keys, SmallVectorImpl<std::optional<Value>>& result) {
+  const auto map = toMap();
+  for (auto key : keys) {
+    if (auto value = map.lookup(key); value) {
+      result.emplace_back(value);
+    } else {
+      result.emplace_back(std::nullopt);
+    }
+  }
+}
+
+void DefImmutableMappingOp::getNonNullValuesFromKeys(
+    ValueRange keys, SmallVectorImpl<Value>& result) {
+  const auto map = toMap();
+  for (auto key : keys) {
+    if (const auto value = map.lookup(key); value) {
+      result.push_back(value);
+    }
+  }
 }
 
 //===----------------------------------------------------------------------===//
