@@ -1,5 +1,9 @@
 add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsDataflowDialect
-    Dataflow.cpp
+    DataflowAttributes.cpp
+    DataflowDialect.cpp
+    DataflowEnums.cpp
+    DataflowOps.cpp
+    DataflowTypes.cpp
     Utils.cpp
 
   ADDITIONAL_HEADER_DIRS

@@ -44,6 +44,8 @@ def Uniform_Dialect : Dialect {
 // Operations
 //===----------------------------------------------------------------------===//
 
+// FIXME: A lot weird ODS going on here.
+
 // Base class for Uniform dialect operations. This operation inherits from the
 // base `Op` class in OpBase.td, and provides:
 //   * The parent dialect of the operation.
@@ -72,6 +74,43 @@ def YieldOp : Uniform_Op<"yield", [NoMemoryEffect, Terminator, ReturnLike,
   ];
 
   let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
+}
+
+def UniformizeRegionsOp : Uniform_Op<"uniformize_regions",
+      [ImplicitUniformTerminator]> {
+  let summary = "uniformize_regions operation";
+  let description = [{
+    This is the main operation of the uniform dialect to map parallel regions to different units, aiming to consolidate programs from multiple units into a single program.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$units,
+                       I32ArrayAttr:$list_sizes,
+                       OptionalAttr<I32ArrayAttr>:$regIndices,
+                       OptionalAttr<ArrayAttr>:$regLocales);
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region VariadicRegion<AnyRegion>:$regions);
+
+  let hasCustomAssemblyFormat = 1;
+
+  let extraClassDeclaration = [{
+    static StringRef getListSizesAttrStrName() {return "list_sizes";}
+    Value getRegionArg(int i) {return getRegion(i).getArgument(0);}
+    ValueRange getRegionUnitList(int);
+    std::optional<ValueRange> getRegionUnitList(Value);
+    std::optional<Region *> getSpecificRegion(Value);
+    Region *getRegionFromUnit(Value);
+
+    ArrayAttr getRegIndicesIfExist() {
+      if (getRegIndices().has_value()) return getRegIndices().value();
+      return nullptr;
+    }
+    ArrayAttr getRegLocalesIfExist() {
+      if (getRegLocales().has_value()) return getRegLocales().value();
+      return nullptr;
+    }
+  }];
+
+  let hasVerifier = 1;
 }
 
 def DefImmutableMappingOp : Uniform_Op<"def_immutable_mapping", 
@@ -123,6 +162,33 @@ def QueryMapOp : Uniform_Op<"query_map",
   let results = (outs AnyType:$result);
 
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+def EqualizePatternOp : Uniform_Op<"equalize_pattern",
+      [ImplicitUniformTerminator]> {
+  let summary = "equalize_pattern operation";
+  let description = [{
+    This operation captures the variations in transfer or compute patterns 
+    between units and encapsulates them within parallel regions.
+    All regions must exhibit an identical pattern of operation sequence.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$units,
+                       I32ArrayAttr:$list_sizes);
+  let regions = (region VariadicRegion<AnyRegion>:$regions);
+
+  let hasCustomAssemblyFormat = 1;
+
+  let extraClassDeclaration = [{
+    static StringRef getListSizesAttrStrName() {return "list_sizes";}
+    Value getRegionArg(int i) {return getRegion(i).getArgument(0);}
+    ValueRange getRegionUnitList(int);
+    std::optional<ValueRange> getRegionUnitList(Value);
+    std::optional<Region *> getSpecificRegion(Value);
+    Region *getRegionFromUnit(Value unit);
+  }];
+
   let hasVerifier = 1;
 }
 

@@ -25,6 +25,8 @@
 
 include "mlir/IR/EnumAttr.td"
 
+// FIXME: Why don't we use dataflow::DataflowRoutingDirection?
+
 def AgenRoutingDirPseudoRandom : I32EnumAttrCase<"PseudoRandom", 0>;
 def AgenRoutingDirCounterClockwise : I32EnumAttrCase<"CounterClockwise", 1>;
 def AgenRoutingDirClockwise : I32EnumAttrCase<"Clockwise", 2>;

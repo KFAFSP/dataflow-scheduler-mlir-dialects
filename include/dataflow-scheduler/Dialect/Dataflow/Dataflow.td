@@ -23,54 +23,16 @@
 #ifndef DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOW_TD
 #define DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOW_TD
 
-include "mlir/IR/EnumAttr.td"
-include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
-include "dataflow-scheduler/Dialect/Dataflow/DataflowEnums.td"
+include "dataflow-scheduler/Dialect/Dataflow/DataflowTypes.td"
 
-//===----------------------------------------------------------------------===//
-// Dialect
-//===----------------------------------------------------------------------===//
-
-def Dataflow_Dialect : Dialect {
-  let name = "dataflow";
-  let cppNamespace = "::mlir::dataflow";
-  
-  let useDefaultAttributePrinterParser = 1;
-
-  let dependentDialects = [
-    "arith::ArithDialect",
-    // These are used by Utils.cpp, and may require loading.
-    "affine::AffineDialect",
-    "scf::SCFDialect"
-  ];
-}
-
-//===----------------------------------------------------------------------===//
-// Attributes
-//===----------------------------------------------------------------------===//
-
-def DataflowRoutingDirectionAttr : EnumAttr<Dataflow_Dialect, DataflowRoutingDirection, "direction">; 
-
-//===----------------------------------------------------------------------===//
-// Operations
-//===----------------------------------------------------------------------===//
-
-// Base class for Dataflow dialect operations. This operation inherits from the
-// base `Op` class in OpBase.td, and provides:
-//   * The parent dialect of the operation.
-//   * The mnemonic for the operation, or the name without the dialect prefix.
-//   * A list of traits for the operation.
+// Base class for KTDF dialect operations
 class Dataflow_Op<string mnemonic, list<Trait> traits = []> :
     Op<Dataflow_Dialect, mnemonic, traits> {
-  // For every standard op, there needs to be a:
-  //   * void print(OpAsmPrinter &p, ${C++ class of Op} op)
-  //   * LogicalResult verify(${C++ class of Op} op)
-  //   * ParseResult parse${C++ class of Op}(OpAsmParser &parser,
-  //                                         OperationState &result)
-  // functions.
 }
+
+// FIXME: A lot weird ODS going on here.
 
 def Dataflow_GetUnitOp:Dataflow_Op<"get_unit",
   [NoMemoryEffect, IsolatedFromAbove]> {
@@ -101,6 +63,22 @@ def Dataflow_GetUnitOp:Dataflow_Op<"get_unit",
 
     let extraClassDeclaration = [{
       Value getUnit();
+    }];
+}
+
+def Dataflow_GetLocalUnitOp:Dataflow_Op<"get_local_unit",
+  [NoMemoryEffect, IsolatedFromAbove]> {
+    let summary = "Getting a handle to a local unit";
+    let description = [{
+    "This operation gets a handle to a local unit for operations on the unit."
+    ```mlir
+        %unit = dataflow.get_local_unit {name="L1-LU"} : Index
+    ```
+    }];
+    let arguments = (ins Index:$unitId, StrAttr:$name);
+    let results = (outs Index:$unit);
+    let assemblyFormat = [{
+         $unitId attr-dict `:` type(results)
     }];
 }
 
@@ -158,7 +136,6 @@ def Dataflow_ReturnOp : Dataflow_Op<"return", [Terminator]> {
   }];
 }
 
-
 def Dataflow_CreateGroupOp:Dataflow_Op<"create_group",
   [NoMemoryEffect, IsolatedFromAbove]> {
     let summary = "Creates a group of unit IDs";
@@ -176,6 +153,33 @@ def Dataflow_CreateGroupOp:Dataflow_Op<"create_group",
     let results = (outs Index:$group_id);
     let assemblyFormat = [{
        `(` ($unit_ids^ `:` type($unit_ids))? `)`  attr-dict `:` type(results)
+    }];
+}
+
+def Dataflow_CreateMulticastGroupOp:Dataflow_Op<"create_multicast_group",
+  [NoMemoryEffect, IsolatedFromAbove]> {
+    let summary = "Creates a multicast group.";
+    let description = [{
+    "This operation creats a multicast group which specifies the unit ID of the
+     producer of data, list of unit IDs of the consumers, and additional 
+     information such as `group_id`, `count` and the number of sharers. Note that the
+     list of consumers could be left empty, however when it is not empty, the 
+     size of that list must match the `num_consumers` (number of sharers) field. 
+     `count` field specifies the initial number of outstanding requests."
+    ```mlir
+        %group = dataflow.create_multicast_group (%1 -> (%2, %3, %4)) {count = 0 : i32, group_id = 1 : i32, num_consumers = 2 : i32} : index
+    ```
+    }];
+
+    let arguments = (ins Index:$producer,
+                     Variadic<Index>:$consumers,
+                     I32Attr:$num_consumers,
+                     I32Attr:$group_id,
+                     I32Attr:$count
+                     );
+    let results = (outs Index:$result);
+    let assemblyFormat = [{
+       `(` $producer `->` `(` ($consumers^)? `)` `)`  attr-dict `:` type(results)
     }];
 }
 
@@ -218,6 +222,23 @@ def Dataflow_SyncRecvOp:Dataflow_Op<"sync_recv",
     }];
 }
 
+def Dataflow_ImplicitSyncOnStreamingBufferOp:Dataflow_Op<"implicit_sync_on_streaming_buffer",
+                                      []> {
+    let summary = "Performs sync send/recv operations at the buffer granularity level";
+    let description = [{
+      "This operation is meant to enable synchronization implicitly at the boundary of streaming buffer."
+    ```mlir
+          %handler = dataflow.implicit_sync_on_streaming_buffer %l1_view, %l1su, %size : (memref<4xi8>, Index, Index, Index)
+    ```
+    }];
+    let arguments = (ins AnyTypeOf<[AnyMemRef]>:$memory_unit, Index:$dst_unit, Index:$buffer_size,
+                         OptionalAttr<StrAttr>:$dbgName);
+    let assemblyFormat = [{
+      $memory_unit `,` $dst_unit `,` $buffer_size attr-dict `:`
+                  type($memory_unit) `,` type($dst_unit)  `,` type($buffer_size)
+    }];
+}
+
 def Dataflow_GetLogicalMemoryViewOp:Dataflow_Op<"get_logical_memory_view",
   [NoMemoryEffect, IsolatedFromAbove]> {
     let summary = "Operation to get a logical view of the memory";
@@ -240,6 +261,40 @@ def Dataflow_GetLogicalMemoryViewOp:Dataflow_Op<"get_logical_memory_view",
     let results = (outs AnyTypeOf<[AnyMemRef]>:$data);
     let assemblyFormat = [{
          $from_unit `,` $start_address  attr-dict `:` type($from_unit) `,` type($start_address) `,` type(results)
+    }];
+}
+
+def Dataflow_GetPagedLogicalMemoryViewOp:Dataflow_Op<"get_paged_logical_memory_view",
+  [NoMemoryEffect, IsolatedFromAbove]> {
+    let summary = "Operation to get logical views of paged memory";
+    let description = [{
+    "This operation is useful to get logical views of paged memory."
+    ```mlir
+    %data = dataflow.get_paged_logical_memory_view %from, %start_address {#layout_map}
+                {segments =
+                    page0: (idx_set = (d0 >= 0, d0 < 64, d1 >= 0, d1 <= 1, d2 = 0>),
+                            start_address = %pg0_start_address),
+                    page1: (idx_set = (d0 >= 0, d0 < 64, d1 >= 2, d1 <= 3, d2 = 0>),
+                            start_address = %pg1_start_address),
+                    page2: (idx_set = (d0 >= 0, d0 < 64, d1 >= 0, d1 <= 1, d2 = 1>),
+                            start_address = %pg2_start_address),
+                    ...
+                    page63: (idx_set = (d0 >= 0, d0 < 64, d1 >= 2, d1 <= 3, d2 = 31>),
+                            start_address = %pg63_start_address)}
+                : index, index, memref<?x?x?xf16>
+    ```
+    }];
+    let arguments = (ins Index:$unit,
+                         Index:$start_addr,
+                         Variadic<Index>:$page_start_addrs,
+                         AffineMapAttr:$layout_map,
+                         ArrayAttr:$idx_sets);
+    let results = (outs AnyTypeOf<[AnyMemRef]>:$data);
+    let hasCustomAssemblyFormat = 1;
+    let hasVerifier = 1;
+
+    let extraClassDeclaration = [{
+      StringRef getIdxSetsStrName() { return "idx_sets"; }
     }];
 }
 
@@ -284,5 +339,26 @@ def Dataflow_ReceiveOp:Dataflow_Op<"receive",
     }];
 }
 
+def Dataflow_OpaqueOp:Dataflow_Op<"opaque",
+  []> {
+    let summary = "Opaque operation";
+    let description = [{
+      "Opaque operation for auxiliary functions."
+      ```mlir
+      dataflow.opaque {func_name = "reciprocal",
+                       read_write_register_dictionary = {p0="R0",p1="R1"},
+                       read_only_register_dictionary = {c0="R2"},
+                       parameter_dictionary = {unroll_factor="2"}}
+      ```
+    }];
+    let arguments = (ins OptionalAttr<StrAttr>:$dbgName,
+                         StrAttr:$func_name,
+                         DictionaryAttr:$read_write_register_dictionary,
+                         DictionaryAttr:$read_only_register_dictionary,
+                         DictionaryAttr:$parameter_dictionary);
+    let assemblyFormat = [{
+        attr-dict
+    }];
+}
 
 #endif // DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOW_TD

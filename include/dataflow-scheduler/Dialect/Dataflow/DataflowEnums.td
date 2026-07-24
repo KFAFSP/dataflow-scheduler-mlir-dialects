@@ -20,8 +20,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_ENUMS_TD
-#define DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_ENUMS_TD
+#ifndef DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOWENUMS_TD
+#define DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOWENUMS_TD
 
 include "mlir/IR/EnumAttr.td"
 
@@ -29,6 +29,8 @@ def DataflowRoutingDirPseudoRandom : I32EnumAttrCase<"PseudoRandom", 0>;
 def DataflowRoutingDirCounterClockwise : I32EnumAttrCase<"CounterClockwise", 1>;
 def DataflowRoutingDirClockwise : I32EnumAttrCase<"Clockwise", 2>;
 def DataflowRoutingDirBoth : I32EnumAttrCase<"BothWays", 3>;
+
+// FIXME: Why is the C++ enum not called RoutingDirection?
 
 def DataflowRoutingDirection : I32EnumAttr<"DataflowRoutingDirection",
     "dataflow routing direction:",
@@ -42,4 +44,4 @@ def DataflowRoutingDirection : I32EnumAttr<"DataflowRoutingDirection",
     let cppNamespace = "::mlir::dataflow";
 }
 
-#endif // DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_ENUMS_TD
+#endif // DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOWENUMS_TD

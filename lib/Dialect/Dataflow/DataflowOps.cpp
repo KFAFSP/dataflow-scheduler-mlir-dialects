@@ -1,4 +1,4 @@
-//===-- Dataflow.cpp ---------------------------------------------*- c++ -*-==//
+//===-- DataflowOps.cpp ------------------------------------------*- c++ -*-==//
 //
 // Part of the Dataflow Scheduler MLIR Dialects project.
 //
@@ -15,12 +15,10 @@
 // limitations under the License.
 //
 //===----------------------------------------------------------------------===//
-//
-// This file implements the dataflow dialect.
-//
-//===----------------------------------------------------------------------===//
 
+// clang-format off
 #include "dataflow-scheduler/Dialect/Dataflow/Dataflow.h"
+// clang-format on
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Affine/Analysis/AffineStructures.h>
@@ -35,62 +33,16 @@ using namespace mlir;
 using namespace mlir::dataflow;
 
 //===----------------------------------------------------------------------===//
-// Dataflow Enums
+// Tablegen Definitions
 //===----------------------------------------------------------------------===//
-
-#include "dataflow-scheduler/Dialect/Dataflow/DataflowEnums.cpp.inc"
-
-//===----------------------------------------------------------------------===//
-// DataflowDialect
-//===----------------------------------------------------------------------===//
-
-#include "dataflow-scheduler/Dialect/Dataflow/DataflowDialect.cpp.inc"
-
-#define GET_ATTRDEF_CLASSES
-#include "dataflow-scheduler/Dialect/Dataflow/DataflowAttributes.cpp.inc"
 
 #define GET_OP_CLASSES
 #include "dataflow-scheduler/Dialect/Dataflow/Dataflow.cpp.inc"
 
-void DataflowDialect::initialize() {
-  addOperations<
-#define GET_OP_LIST
-#include "dataflow-scheduler/Dialect/Dataflow/Dataflow.cpp.inc"
-      >();
-  addAttributes<
-#define GET_ATTRDEF_LIST
-#include "dataflow-scheduler/Dialect/Dataflow/DataflowAttributes.cpp.inc"
-      >();
-  addTypes<
-#define GET_TYPEDEF_LIST
-#include "dataflow-scheduler/Dialect/Dataflow/DataflowTypes.cpp.inc"
-      >();
-}
+//===----------------------------------------------------------------------===//
+// GetUnitOp
+//===----------------------------------------------------------------------===//
 
-/*
- void GetUnitOp::print(OpAsmPrinter &printer) {
-  auto op = this;
-  printer << op->getName() << " " << op->getOperands();
-  printer.printOptionalAttrDict(op->getAttrs());
-  printer << " : ";
-
-  // If all of the types are the same, print the type directly.
-  if (op->getNumResults() != 0) {
-    Type resultType = *op->result_type_begin();
-    if (llvm::all_of(op->getOperandTypes(),
-                     [=](Type type) { return type == resultType; })) {
-      printer << resultType;
-      return;
-    }
-  }
-
-  // Otherwise, print a functional type.
-  printer.printFunctionalType(op->getOperandTypes(), op->getResultTypes());
-}*/
-
-// We couldn't find a way to cleanly specify a variadic result with definitely
-// at-least one entry. So, we used variadic in td definition and check
-// for single entry in the verify function.
 LogicalResult GetUnitOp::verify() {
   auto& op = *this;
   return op.getNumResults() >= 1 ? LogicalResult::success() : failure();
@@ -104,7 +56,7 @@ Value GetUnitOp::getUnit() {
 //===----------------------------------------------------------------------===//
 // ProgramUnitOp
 //===----------------------------------------------------------------------===//
-/* Build method to construct ProgramUnit Op */
+
 void ProgramUnitOp::build(OpBuilder& builder, OperationState& result,
                           ValueRange unitIds, StringAttr precision_attr,
                           ProgramUnitOp::BodyBuilderFn bodyBuilder) {
@@ -221,4 +173,135 @@ void ProgramUnitOp::print(OpAsmPrinter& _odsPrinter) {
                                   /*printBlockTerminators=*/printTerminator);
         }
       });
+}
+
+//===----------------------------------------------------------------------===//
+// GetPagedLogicalMemoryViewOp
+//===----------------------------------------------------------------------===//
+
+ParseResult GetPagedLogicalMemoryViewOp::parse(OpAsmParser& parser,
+                                               OperationState& result) {
+  // Parse the operands.
+  OpAsmParser::UnresolvedOperand unit, start_addr;
+  auto op_result = parser.parseOperand(unit) || parser.parseComma() ||
+                   parser.parseOperand(start_addr);
+
+  // Parse the attributes.
+  op_result = op_result || parser.parseOptionalAttrDict(result.attributes);
+
+  // Parse the segments. We anticipate each segment/page be named "page<#>"
+  // where # starts at 0 and increases by 1 for each additional page. There
+  // should be at least one page.
+  op_result = op_result || parser.parseLBrace() ||
+              parser.parseKeyword("segments") || parser.parseEqual();
+
+  SmallVector<Attribute, 4> idx_sets;
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> page_start_addrs;
+  int page_num = 0;
+  std::string page_keyword = "page" + std::to_string(page_num);
+  while (parser.parseOptionalKeyword(page_keyword).succeeded()) {
+    IntegerSetAttr idx_set;
+    OpAsmParser::UnresolvedOperand page_start_addr;
+    op_result = op_result || parser.parseColon() || parser.parseLParen() ||
+                parser.parseKeyword("idx_set") || parser.parseEqual() ||
+                parser.parseAttribute(idx_set) || parser.parseComma() ||
+                parser.parseKeyword("start_addr") || parser.parseEqual() ||
+                parser.parseOperand(page_start_addr) || parser.parseRParen();
+    std::ignore = parser.parseOptionalComma();
+    idx_sets.push_back(idx_set);
+    page_start_addrs.push_back(page_start_addr);
+    ++page_num;
+    page_keyword = "page" + std::to_string(page_num);
+  }
+  op_result = op_result || parser.parseRBrace();
+
+  auto& builder = parser.getBuilder();
+  result.addAttribute("idx_sets", builder.getArrayAttr(idx_sets));
+
+  // Parse the types. The operation only displays the type of the unit and
+  // start_address operands, and the type of the result of the operation.
+  auto index_type = builder.getIndexType();
+  Type result_type;
+  op_result = op_result || parser.parseColonType(index_type) ||
+              parser.parseComma() || parser.parseType(index_type) ||
+              parser.parseComma() || parser.parseType(result_type);
+
+  // Parse result type.
+  result.types.push_back(result_type);
+
+  op_result =
+      op_result || parser.resolveOperand(unit, index_type, result.operands) ||
+      parser.resolveOperand(start_addr, index_type, result.operands) ||
+      parser.resolveOperands(page_start_addrs, index_type, result.operands);
+
+  return failure(op_result);
+}
+
+void GetPagedLogicalMemoryViewOp::print(::mlir::OpAsmPrinter& p) {
+  auto& op = *this;
+
+  // Print the unit, start address, and attributes except for the idx_sets.
+  p << " " << op.getUnit() << ", " << op.getStartAddr();
+  p.printOptionalAttrDict(op->getAttrs(),
+                          /*elidedAttrs*/ {op.getIdxSetsStrName()});
+
+  // Print the segments (the idx_set + page_start_address pairs).
+  p.printNewline();
+  p << "  {segments = ";
+  int page_num = 0;
+  assert((op.getIdxSets().size() == op.getPageStartAddrs().size()) &&
+         "idx_sets attribute must have same number of entries as "
+         "page_start_addrs operands");
+  for (auto&& [idx_set, page_start_addr] :
+       llvm::zip(op.getIdxSets(), op.getPageStartAddrs())) {
+    if (page_num > 0) p << ",";
+    p.printNewline();
+    p << "    page" << page_num << ": (idx_set = " << idx_set << ", "
+      << "start_addr = " << page_start_addr << ")";
+    ++page_num;
+  }
+  p << "} : ";
+  p.printType(op.getUnit().getType());
+  p << ", ";
+  p.printType(op.getStartAddr().getType());
+  p << ", ";
+  p.printType(op.getResult().getType());
+}
+
+LogicalResult GetPagedLogicalMemoryViewOp::verify() {
+  auto& op = *this;
+
+  auto idx_sets = op.getIdxSets();
+  auto page_start_addrs = op.getPageStartAddrs();
+  if (idx_sets.size() != page_start_addrs.size())
+    return op->emitOpError(
+        "there should be a start address and idx_set for every page");
+
+  for (std::size_t page_idx = 0; page_idx < idx_sets.size(); ++page_idx) {
+    // The start addresses for the pages need to be constant operations.
+    auto page_start_addr_op = page_start_addrs[page_idx].getDefiningOp();
+    if (!page_start_addr_op || !isa<arith::ConstantOp>(page_start_addr_op))
+      return op->emitOpError(
+          "page start addresses should be arith::ConstantOp");
+
+    // The page sets need to be hyper rectangular.
+    auto idx_set = idx_sets[page_idx];
+    auto page_set = dyn_cast<IntegerSetAttr>(idx_set);
+    if (!page_set) return op->emitOpError("idx_sets should be IntegerSetAttrs");
+    FlatLinearValueConstraints page_set_flat(page_set.getValue());
+    if (!page_set_flat.isHyperRectangular(0, page_set_flat.getNumCols() - 1))
+      return op->emitOpError("idx_set should be hyper rectangular");
+  }
+  return LogicalResult::success();
+}
+
+//===----------------------------------------------------------------------===//
+// DataflowDialect
+//===----------------------------------------------------------------------===//
+
+void DataflowDialect::registerOps() {
+  addOperations<
+#define GET_OP_LIST
+#include "dataflow-scheduler/Dialect/Dataflow/Dataflow.cpp.inc"
+      >();
 }

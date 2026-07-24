@@ -1,4 +1,4 @@
-//===-- Dataflow.h -- --------------------------------------------*- c++ -*-==//
+//===-- AgenEnums.td ---------------------------------------*- tablegen -*-===//
 //
 // Part of the Dataflow Scheduler MLIR Dialects project.
 //
@@ -16,22 +16,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file includes the entire dataflow dialect.
+// Wrapper that pulls in all the agen enums for Python bindings.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOW_H_
-#define DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOW_H_
-
-#include <mlir/Bytecode/BytecodeOpInterface.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/OpDefinition.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
-
-#include "dataflow-scheduler/Dialect/Dataflow/DataflowTypes.h"  // IWYU pragma: keep
-
-/// Auto-generated includes.
-#define GET_OP_CLASSES
-#include "dataflow-scheduler/Dialect/Dataflow/Dataflow.h.inc"
-
-#endif  // DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOW_H_
+include "dataflow-scheduler/Dialect/Agen/AgenEnums.td"

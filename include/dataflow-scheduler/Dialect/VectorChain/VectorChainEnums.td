@@ -58,4 +58,64 @@ def VectorChainBinaryOperator : I32EnumAttr<"VectorChainBinaryOperator",
       let cppNamespace = "::mlir::vectorchain";
     }
 
+def VectorChainElementWiseCompareEq : I32EnumAttrCase<"compare_eq", 0>;
+def VectorChainElementWiseCompareNeq : I32EnumAttrCase<"compare_neq", 1>;
+def VectorChainElementWiseCompareLt : I32EnumAttrCase<"compare_lt", 2>;
+def VectorChainElementWiseCompareLe : I32EnumAttrCase<"compare_le", 3>;
+def VectorChainElementWiseCompareGt : I32EnumAttrCase<"compare_gt", 4>;
+def VectorChainElementWiseCompareGe : I32EnumAttrCase<"compare_ge", 5>;
+
+def VectorChainElementWiseCompareOperator : I32EnumAttr<"VectorChainElementWiseCompareOperator",
+    "built-in operators supported by VectorChain Compare ops.",
+    [
+      VectorChainElementWiseCompareEq,
+      VectorChainElementWiseCompareNeq,
+      VectorChainElementWiseCompareLt,
+      VectorChainElementWiseCompareLe,
+      VectorChainElementWiseCompareGt,
+      VectorChainElementWiseCompareGe
+    ]> {
+      let genSpecializedAttr = 0;
+      let cppNamespace = "::mlir::vectorchain";
+    }
+
+def VectorChainEstExpA : I32EnumAttrCase<"a", 0>;
+def VectorChainEstExpB : I32EnumAttrCase<"b", 1>;
+
+def VectorChainExpEstimate : I32EnumAttr<"VectorChainExpEstimate",
+    "List of versions of exp func extimates.",
+    [
+      VectorChainEstExpA,
+      VectorChainEstExpB
+    ]> {
+      let genSpecializedAttr = 0;
+      let cppNamespace = "::mlir::vectorchain";
+    }
+
+def VectorChainEstSlope  : I32EnumAttrCase<"slope", 0>;
+def VectorChainEstOffset : I32EnumAttrCase<"offset", 1>;
+
+def VectorChainEstimateVersions : I32EnumAttr<"VectorChainEstimateVersions",
+    "Slope or offset of the func extimates.",
+    [
+      VectorChainEstSlope,
+      VectorChainEstOffset
+    ]> {
+      let genSpecializedAttr = 0;
+      let cppNamespace = "::mlir::vectorchain";
+    }
+
+def VectorChainLtoR  : I32EnumAttrCase<"left_to_right", 0>;
+def VectorChainRtoL : I32EnumAttrCase<"right_to_left", 1>;
+
+def VectorChainScanOpEvalOrders : I32EnumAttr<"VectorChainScanOpEvalOrders",
+    "Reduction evaluation order.",
+    [
+      VectorChainLtoR,
+      VectorChainRtoL
+    ]> {
+      let genSpecializedAttr = 0;
+      let cppNamespace = "::mlir::vectorchain";
+    }
+
 #endif // DATAFLOW_SCHEDULER_DIALECT_VECTORCHAIN_VECTORCHAINENUMS_TD

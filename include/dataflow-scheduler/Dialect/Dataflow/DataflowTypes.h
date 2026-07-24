@@ -1,4 +1,4 @@
-//===-- Dataflow.h -- --------------------------------------------*- c++ -*-==//
+//===-- DataflowTypes.h -----------------------------------------*- c++ -*-===//
 //
 // Part of the Dataflow Scheduler MLIR Dialects project.
 //
@@ -15,23 +15,16 @@
 // limitations under the License.
 //
 //===----------------------------------------------------------------------===//
-//
-// This file includes the entire dataflow dialect.
-//
-//===----------------------------------------------------------------------===//
 
-#ifndef DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOW_H_
-#define DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOW_H_
+#ifndef DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOWTYPES_H_
+#define DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOWTYPES_H_
 
-#include <mlir/Bytecode/BytecodeOpInterface.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/OpDefinition.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <mlir/IR/TypeUtilities.h>
 
-#include "dataflow-scheduler/Dialect/Dataflow/DataflowTypes.h"  // IWYU pragma: keep
+#include "dataflow-scheduler/Dialect/Dataflow/DataflowAttributes.h"  // IWYU pragma: keep
 
 /// Auto-generated includes.
-#define GET_OP_CLASSES
-#include "dataflow-scheduler/Dialect/Dataflow/Dataflow.h.inc"
+#define GET_TYPEDEF_CLASSES
+#include "dataflow-scheduler/Dialect/Dataflow/DataflowTypes.h.inc"
 
-#endif  // DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOW_H_
+#endif  // DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOWTYPES_H_

@@ -27,7 +27,19 @@
 
 namespace mlir::dataflow {
 
-int getCoreletId(const dataflow::GetUnitOp op);
+/// @brief Determine if \p type is an int or float type (handles both builtin
+/// and custom dataflow types such as CustomMXFloatType).
+bool isIntOrFloatType(Type type);
+
+/// @brief Get the bitwidth of \p type. Handles builtin int/float types and
+/// CustomMXFloatType.
+unsigned getIntOrFloatBitWidth(Type type);
+
+/// @brief Get the number of elements in \p type.
+/// Handles VectorType and dataflow::CustomVectorType.
+int64_t getNumElements(Type type);
+
+int getCoreletId(GetUnitOp op);
 
 }  // namespace mlir::dataflow
 

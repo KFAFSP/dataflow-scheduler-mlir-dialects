@@ -48,6 +48,361 @@ void UniformDialect::initialize() {
 }
 
 //===----------------------------------------------------------------------===//
+// UniformizeRegionsOp
+//===----------------------------------------------------------------------===//
+
+// syntax:
+// %results = uniform.uniformize_regions ->(index) {
+//   (%arg0 -> %1, %2) {
+//     Region1
+//   }
+//   (%arg1 -> %3) {
+//     Region2
+//   }
+// }
+ParseResult UniformizeRegionsOp::parse(OpAsmParser& parser,
+                                       OperationState& result) {
+  auto& builder = parser.getBuilder();
+  auto index_type = builder.getIndexType();
+
+  SmallVector<OpAsmParser::UnresolvedOperand, 1> unit_list;
+  OpAsmParser::Argument region_arg;
+  region_arg.type = index_type;
+  SmallVector<int32_t, 1> list_sizes;
+  auto* body = result.addRegion();
+
+  auto op_result =
+      parser.parseOptionalArrowTypeList(result.types) || parser.parseLBrace();
+
+  while (parser.parseOptionalLParen().succeeded()) {
+    op_result = op_result || parser.parseArgument(region_arg) ||
+                parser.parseArrow() || parser.parseOperandList(unit_list) ||
+                parser.parseRParen() || parser.parseRegion(*body, {region_arg});
+    list_sizes.push_back(unit_list.size());
+    op_result = op_result ||
+                parser.resolveOperands(unit_list, index_type, result.operands);
+    unit_list.clear();
+    UniformizeRegionsOp::ensureTerminator(*body, builder, result.location);
+    body = result.addRegion();
+  }
+  result.regions.pop_back();  // pop the empty region
+  op_result = op_result || parser.parseOptionalRBrace() ||
+              parser.parseOptionalAttrDict(result.attributes);
+  result.addAttribute(getListSizesAttrStrName(),
+                      builder.getI32ArrayAttr(list_sizes));
+
+  return failure(op_result);
+}
+
+void UniformizeRegionsOp::print(OpAsmPrinter& p) {
+  auto& op = *this;
+  auto num_regions = op.getRegions().size();
+
+  p.printArrowTypeList(op.getResultTypes());
+
+  p << " {";
+  p.increaseIndent();
+  for (std::size_t i = 0; i < num_regions; i++) {
+    p.printNewline();
+    p << '(' << op.getRegionArg(i) << " -> ";
+    p.printOperands(op.getRegionUnitList(i));
+    p << ')';
+    p.printRegion(op.getRegion(i), false, true);
+  }
+  p.decreaseIndent();
+  p.printNewline();
+  p << '}';
+
+  // Print all non-hidden attributes
+  llvm::SmallVector<StringRef, 3> named_attr = {"list_sizes", "newly_added"};
+  p.printOptionalAttrDict(op->getAttrs(), named_attr);
+}
+
+LogicalResult UniformizeRegionsOp::verify() {
+  auto& op = *this;
+  assert(op.getRegions().size() >= 1);
+  assert(op.getRegions().size() == op.getListSizes().size());
+
+  // check unit sizes are the same as list of sizes
+  int size = op.getUnits().size();
+  int accu_size = 0;
+  for (std::size_t i = 0; i < op.getListSizes().size(); i++) {
+    accu_size +=
+        mlir::cast<IntegerAttr>(op.getListSizes().getValue()[i]).getInt();
+  }
+  assert((accu_size == size) &&
+         "unit size has to be matched to the list sizes contents.");
+
+  // no duplication in units
+  llvm::DenseSet<mlir::Value> units;
+  for (auto unit : op.getUnits()) {
+    if (units.contains(unit)) {
+      op.emitError("duplicated unit SSAs found!");
+      return failure();
+    } else {
+      units.insert(unit);
+    }
+  }
+
+  // verify units of unit_lists are either get_unit or create_group
+  for (std::size_t idx = 0; idx < op.getRegions().size(); idx++) {
+    auto units = op.getRegionUnitList(idx);
+    if (units.size() == 1) {
+      auto def_op = units.front().getDefiningOp();
+      if (!isa<dataflow::GetUnitOp, dataflow::CreateGroupOp>(def_op)) {
+        op.emitError(
+            "region's unit_list must be programUnitOp or createGroupOp type!");
+        return failure();
+      }
+    } else {
+      for (auto unit : units) {
+        if (!isa<dataflow::GetUnitOp>(unit.getDefiningOp())) {
+          op.emitError(
+              "when unit_list size > 1, all units must be programUnitOp!");
+          return failure();
+        }
+      }
+    }
+  }
+
+  // yieldOp's operand sizes are equal to results' size.
+  const auto result_size = op.getResults().size();
+  for (auto& region : op.getRegions()) {
+    if (region.getBlocks().front().getTerminator()->getNumOperands() !=
+        result_size) {
+      op.emitError(
+          "The size of the operands in the yieldOp of a uniformize_regionsOp "
+          "region differs from the size of its results.");
+      return failure();
+    }
+  }
+  return success();
+}
+
+ValueRange UniformizeRegionsOp::getRegionUnitList(int pos) {
+  int drop = 0;
+  int keep =
+      mlir::cast<IntegerAttr>(this->getListSizes().getValue()[pos]).getInt();
+  for (auto idx = 0; idx < pos; idx++) {
+    drop +=
+        mlir::cast<IntegerAttr>(this->getListSizes().getValue()[idx]).getInt();
+  }
+  return this->getUnits().slice(drop, keep);
+}
+
+std::optional<ValueRange> UniformizeRegionsOp::getRegionUnitList(Value arg) {
+  int size = this->getListSizes().size();
+  for (int idx = 0; idx < size; idx++) {
+    if (arg == getRegionArg(idx)) {
+      return getRegionUnitList(idx);
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<Region*> UniformizeRegionsOp::getSpecificRegion(Value arg) {
+  int size = this->getListSizes().size();
+  for (int idx = 0; idx < size; idx++) {
+    if (arg == getRegionArg(idx)) {
+      return &getRegion(idx);
+    }
+  }
+  return std::nullopt;
+}
+
+Region* UniformizeRegionsOp::getRegionFromUnit(Value unit) {
+  int idx_in_unit_list = 0;
+  for (auto get_unit : this->getUnits()) {
+    if (get_unit == unit) break;
+    ++idx_in_unit_list;
+  }
+
+  int num_units_visited = 0;
+  auto list_sizes = this->getListSizes();
+  for (std::size_t i = 0; i < list_sizes.size(); ++i) {
+    num_units_visited += mlir::cast<IntegerAttr>(list_sizes[i]).getInt();
+    if (num_units_visited > idx_in_unit_list) return &this->getRegion(i);
+  }
+  return nullptr;
+}
+
+//===----------------------------------------------------------------------===//
+// EqualizePatternOp
+//===----------------------------------------------------------------------===//
+
+// syntax:
+// uniform.equalize_pattern
+//   (%arg0 -> %1, %2) {
+//     Region1
+//   }
+//   (%arg1 -> %3) {
+//     Region2
+//   }
+// }
+ParseResult EqualizePatternOp::parse(OpAsmParser& parser,
+                                     OperationState& result) {
+  auto& builder = parser.getBuilder();
+  auto index_type = builder.getIndexType();
+
+  SmallVector<OpAsmParser::UnresolvedOperand, 1> unit_list;
+  OpAsmParser::Argument region_arg;
+  region_arg.type = index_type;
+  SmallVector<int32_t, 1> list_sizes;
+  auto* body = result.addRegion();
+
+  auto op_result = parser.parseLBrace().failed();
+
+  while (parser.parseOptionalLParen().succeeded()) {
+    op_result = op_result || parser.parseArgument(region_arg) ||
+                parser.parseArrow() || parser.parseOperandList(unit_list) ||
+                parser.parseRParen() || parser.parseRegion(*body, {region_arg});
+    list_sizes.push_back(unit_list.size());
+    op_result = op_result ||
+                parser.resolveOperands(unit_list, index_type, result.operands);
+    unit_list.clear();
+    UniformizeRegionsOp::ensureTerminator(*body, builder, result.location);
+    body = result.addRegion();
+  }
+  result.regions.pop_back();  // pop the empty region
+  op_result = op_result || parser.parseOptionalRBrace();
+  result.addAttribute(getListSizesAttrStrName(),
+                      builder.getI32ArrayAttr(list_sizes));
+
+  return failure(op_result);
+}
+
+void EqualizePatternOp::print(OpAsmPrinter& p) {
+  auto& op = *this;
+  auto num_regions = op.getRegions().size();
+
+  p << " {";
+  p.increaseIndent();
+  for (std::size_t i = 0; i < num_regions; i++) {
+    p.printNewline();
+    p << '(' << op.getRegionArg(i) << " -> ";
+    p.printOperands(op.getRegionUnitList(i));
+    p << ')';
+    p.printRegion(op.getRegion(i), false, true);
+  }
+  p.decreaseIndent();
+  p.printNewline();
+  p << '}';
+}
+
+LogicalResult EqualizePatternOp::verify() {
+  auto& op = *this;
+  assert(op.getRegions().size() >= 1);
+  assert(op.getRegions().size() == op.getListSizes().size());
+
+  // no duplication in units
+  const auto size = op.getUnits().size();
+  for (std::size_t i = 0; i < size - 1; i++) {
+    for (std::size_t j = i + 1; j < size; j++) {
+      if (op.getUnits()[i] == op.getUnits()[j]) {
+        op.emitError("duplicated unit SSAs found!");
+        return failure();
+      }
+    }
+  }
+
+  // verify units of unit_lists are either get_unit or create_group
+  for (std::size_t idx = 0; idx < op.getRegions().size(); idx++) {
+    auto units = op.getRegionUnitList(idx);
+    if (units.size() == 1) {
+      auto def_op = units.front().getDefiningOp();
+      if (!isa<dataflow::GetUnitOp, dataflow::CreateGroupOp>(def_op)) {
+        op.emitError(
+            "region's unit_list must be programUnitOp or createGroupOp type!");
+        return failure();
+      }
+    } else {
+      for (auto unit : units) {
+        if (!isa<dataflow::GetUnitOp>(unit.getDefiningOp())) {
+          op.emitError(
+              "when unit_list size > 1, all units must be programUnitOp!");
+          return failure();
+        }
+      }
+    }
+  }
+
+  // all regions should have the same number of operations
+  const auto region_size = op.getRegions().size();
+  assert(region_size > 1);
+  const auto operation_size = op.getRegion(0).front().getOperations().size();
+  for (std::size_t idx = 1; idx < region_size; idx++) {
+    if (op.getRegion(idx).front().getOperations().size() != operation_size) {
+      op.emitError("regions have different operation size.");
+      return failure();
+    }
+  }
+  // all regions should contain the same sequence of operations.
+  SmallVector<OperationName> op_names;
+  for (auto& each_op : op.getRegion(0).front().getOperations()) {
+    op_names.push_back(each_op.getName());
+  }
+  for (std::size_t region_idx = 1; region_idx < region_size; region_idx++) {
+    auto& region = op.getRegion(region_idx);
+    int op_idx = 0;
+    for (auto& each_op : region.front().getOperations()) {
+      if (each_op.getName() != op_names[op_idx]) {
+        op.emitError("Operation sequences different.");
+        return failure();
+      }
+      op_idx++;
+    }
+  }
+  return success();
+}
+
+ValueRange EqualizePatternOp::getRegionUnitList(int pos) {
+  int drop = 0;
+  int keep =
+      mlir::cast<IntegerAttr>(this->getListSizes().getValue()[pos]).getInt();
+  for (auto idx = 0; idx < pos; idx++) {
+    drop +=
+        mlir::cast<IntegerAttr>(this->getListSizes().getValue()[idx]).getInt();
+  }
+  return this->getUnits().slice(drop, keep);
+}
+
+std::optional<ValueRange> EqualizePatternOp::getRegionUnitList(Value arg) {
+  int size = this->getListSizes().size();
+  for (int idx = 0; idx < size; idx++) {
+    if (arg == getRegionArg(idx)) {
+      return getRegionUnitList(idx);
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<Region*> EqualizePatternOp::getSpecificRegion(Value arg) {
+  int size = this->getListSizes().size();
+  for (int idx = 0; idx < size; idx++) {
+    if (arg == getRegionArg(idx)) {
+      return &getRegion(idx);
+    }
+  }
+  return std::nullopt;
+}
+
+Region* EqualizePatternOp::getRegionFromUnit(Value unit) {
+  int idx_in_unit_list = 0;
+  for (auto get_unit : this->getUnits()) {
+    if (get_unit == unit) break;
+    ++idx_in_unit_list;
+  }
+
+  int num_units_visited = 0;
+  auto list_sizes = this->getListSizes();
+  for (std::size_t i = 0; i < list_sizes.size(); ++i) {
+    num_units_visited += mlir::cast<IntegerAttr>(list_sizes[i]).getInt();
+    if (num_units_visited > idx_in_unit_list) return &this->getRegion(i);
+  }
+  return nullptr;
+}
+
+//===----------------------------------------------------------------------===//
 // DefImmutableMappingOp
 //===----------------------------------------------------------------------===//
 
@@ -65,8 +420,7 @@ ParseResult DefImmutableMappingOp::parse(OpAsmParser& parser,
                 parser.parseOperand(value) || parser.parseRSquare();
     keys.push_back(key);
     values.push_back(value);
-    if (parser.parseOptionalComma().failed())
-      break;
+    if (parser.parseOptionalComma().failed()) break;
   }
   Type result_type;
   op_result =
