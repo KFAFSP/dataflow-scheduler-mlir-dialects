@@ -113,7 +113,7 @@ def UniformizeRegionsOp : Uniform_Op<"uniformize_regions",
   let hasVerifier = 1;
 }
 
-def DefImmutableMappingOp : Uniform_Op<"def_immutable_mapping", 
+def DefImmutableMappingOp : Uniform_Op<"def_immutable_mapping",
   [NoMemoryEffect, IsolatedFromAbove, AttrSizedOperandSegments]> {
   let summary = "def_immutable_mapping operation";
   let description = [{
@@ -148,7 +148,7 @@ def DefImmutableMappingOp : Uniform_Op<"def_immutable_mapping",
       getValuesFromKeys(keys, result);
       return result;
     }
-    
+
     void getNonNullValuesFromKeys(ValueRange keys, SmallVectorImpl<Value> &result);
     SmallVector<Value> getNonNullValuesFromKeys(ValueRange keys) {
       SmallVector<Value> result;
@@ -160,7 +160,7 @@ def DefImmutableMappingOp : Uniform_Op<"def_immutable_mapping",
   let hasVerifier = 1;
 }
 
-def QueryMapOp : Uniform_Op<"query_map", 
+def QueryMapOp : Uniform_Op<"query_map",
   [NoMemoryEffect, IsolatedFromAbove]> {
   let summary = "query_map operation";
   let description = [{
@@ -174,18 +174,22 @@ def QueryMapOp : Uniform_Op<"query_map",
   }];
 
   let arguments = (ins Index:$map,
-                       Index:$key); 
+                       Index:$key);
   let results = (outs AnyType:$result);
 
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+    void getAllQueriedValues(SmallVectorImpl<Value> &result);
+  }];
 }
 
 def EqualizePatternOp : Uniform_Op<"equalize_pattern",
       [ImplicitUniformTerminator]> {
   let summary = "equalize_pattern operation";
   let description = [{
-    This operation captures the variations in transfer or compute patterns 
+    This operation captures the variations in transfer or compute patterns
     between units and encapsulates them within parallel regions.
     All regions must exhibit an identical pattern of operation sequence.
   }];

@@ -22,6 +22,7 @@
 
 #include "dataflow-scheduler/Dialect/Uniform/Uniform.h"
 
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/DialectImplementation.h>
 #include <mlir/Support/LLVM.h>
@@ -591,3 +592,46 @@ void QueryMapOp::print(OpAsmPrinter& p) {
 }
 
 LogicalResult QueryMapOp::verify() { return success(); }
+
+void QueryMapOp::getAllQueriedValues(SmallVectorImpl<Value> &result) {
+  auto &op = *this;
+  auto map_op = op.getMap().getDefiningOp<uniform::DefImmutableMappingOp>();
+  auto parametric_key = op.getKey();
+  SmallVector<Value> all_keys;
+  if (isa<BlockArgument>(parametric_key)) {
+    auto key_parent_op = dyn_cast<BlockArgument>(parametric_key)
+                             .getParentRegion()
+                             ->getParentOp();
+    if (auto prog_unit_op = dyn_cast<dataflow::ProgramUnitOp>(key_parent_op)) {
+      all_keys = prog_unit_op.getUnits();
+    } else if (isa<uniform::UniformizeRegionsOp, uniform::EqualizePatternOp>(
+                   key_parent_op)) {
+      std::optional<mlir::ValueRange> list;
+      if (auto uniformize_op =
+              dyn_cast<uniform::UniformizeRegionsOp>(key_parent_op)) {
+        list = uniformize_op.getRegionUnitList(parametric_key);
+      } else if (auto equalize_op =
+                     dyn_cast<uniform::EqualizePatternOp>(key_parent_op)) {
+        list = equalize_op.getRegionUnitList(parametric_key);
+      }
+      if (list.has_value()) {
+        all_keys = list.value();
+        if (list.value().size() == 1) {
+          if (auto create_group_op =
+                  list.value()
+                      .front()
+                      .getDefiningOp<dataflow::CreateGroupOp>()) {
+            all_keys = create_group_op.getUnitIds();
+          }
+        } else if (list.value().size() == 0) {
+          op->emitError("key's unit list is empty.");
+          return;
+        }
+      }
+    }
+  } else if (auto prog_op =
+                 parametric_key.getDefiningOp<dataflow::ProgramUnitOp>()) {
+    all_keys.push_back(parametric_key);
+  }
+  map_op.getNonNullValuesFromKeys(all_keys, result);
+}
