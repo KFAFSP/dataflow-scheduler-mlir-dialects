@@ -2532,11 +2532,11 @@ LogicalResult SymbolicVectorStoreOp::verify() {
     return emitOpError("result type does not match memref element type");
 
   // There should be one or more indices.
-  auto indices_size = op.getIndices().size();
-  if (indices_size < 0) return emitOpError("indices should not be empty");
+  if (op.getIndices().empty())
+    return emitOpError("indices should not be empty");
 
   // There should be an equal amount of strides to the indices.
-  if (op.getStrides().size() != indices_size)
+  if (op.getStrides().size() != op.getIndices().size())
     return emitOpError("strides should be the same size as indices");
 
   return success();

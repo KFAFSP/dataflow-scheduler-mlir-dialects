@@ -164,7 +164,7 @@ def Agen_VectorLoadOp : Agen_Op<"vector_load", [
 
     [[deprecated("use getMapOperands()")]]
     ::mlir::Operation::operand_range indices() {
-      return getMapIndices();
+      return getMapOperands();
     }
 
     SmallVector<Operation *> getUseChain();
