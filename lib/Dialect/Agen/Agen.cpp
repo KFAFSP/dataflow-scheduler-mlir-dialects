@@ -33,6 +33,7 @@
 #include <mlir/IR/OperationSupport.h>
 
 #include <cassert>
+#include <memory>
 #include <regex>
 
 #include "dataflow-scheduler/Dialect/Dataflow/Dataflow.h"
@@ -350,8 +351,9 @@ void CompositeLoadAndStoreOp::print(OpAsmPrinter& p) {
 void CompositeLoadAndStoreOp::build(
     OpBuilder& builder, OperationState& state, Value src_mem_ref,
     Value dst_mem_ref, StringAttr dbg_name, AffineMapAttr src_map,
-    ValueRange src_map_operands, AffineMapAttr dst_map, ValueRange dst_map_operands,
-    IntegerSetAttr load_set, AffineMapAttr load_order, IntegerSetAttr store_set,
+    ValueRange src_map_operands, AffineMapAttr dst_map,
+    ValueRange dst_map_operands, IntegerSetAttr load_set,
+    AffineMapAttr load_order, IntegerSetAttr store_set,
     AffineMapAttr store_order, ValueRange time_symbols, IntegerSetAttr time_set,
     AffineMapAttr time_order, AffineMapAttr load_time_addr_map,
     AffineMapAttr store_time_addr_map, VectorType type,
@@ -662,170 +664,157 @@ CompositeLoadOp CompositeLoadOp::cloneWithNewAccessInfo(
 
 ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
                                     OperationState& result) {
-  auto& builder = parser.getBuilder();
-  auto index_type = builder.getIndexType();
   auto& props = result.getOrAddProperties<Properties>();
 
-  MemRefType memref_type;
-  Type input_vector_type;
-  OpAsmParser::UnresolvedOperand memref_info, input_vector;
-  bool getHaveInputVector = false;
-  SmallVector<OpAsmParser::UnresolvedOperand, 1> map_operands;
-  SmallVector<OpAsmParser::UnresolvedOperand, 1> time_symbols_operands;
-  // Parse region arguments.
-  SmallVector<OpAsmParser::Argument, 1> regionArgs;
-  SmallVector<Type, 1> argTypes;
-  Region* body = result.addRegion();
-
-  // parse memref
-  auto op_result =
-      parser.parseOperand(memref_info) ||
-      parseAffineMapOfSSAIds(parser, props.affine_map, map_operands);
-  // parse optional input vector for coalesce store
-  if (succeeded(parser.parseOptionalKeyword("input_vector"))) {
-    op_result =
-        op_result || parser.parseEqual() || parser.parseOperand(input_vector);
-    result.addAttribute(
-        CompositeStoreOp::getHaveInputVectorAttrName(result.name),
-        builder.getBoolAttr(true));
-    getHaveInputVector = true;
+  OpAsmParser::UnresolvedOperand mem_ref;
+  SmallVector<OpAsmParser::UnresolvedOperand> map_operands;
+  if (parser.parseOperand(mem_ref) ||
+      parseAffineMapOfSSAIds(parser, props.affine_map, map_operands)) {
+    return failure();
   }
-  // parse time symbols and attributes
-  op_result = op_result || parser.parseKeyword("time_symbols") ||
-              parser.parseOperandList(time_symbols_operands,
-                                      OpAsmParser::Delimiter::Paren) ||
-              parser.parseOptionalAttrDict(result.attributes);
-  // parse optional region
-  auto region_parse_result = parser.parseOptionalRegion(*body, regionArgs);
-  if (region_parse_result.has_value()) {
-    // check if attr exists
-    if (getHaveInputVector) {
+
+  OpAsmParser::UnresolvedOperand input_vector;
+  if (succeeded(parser.parseOptionalKeyword("input_vector")) &&
+      parser.parseEqual() && parser.parseOperand(input_vector)) {
+    return failure();
+  }
+
+  SmallVector<OpAsmParser::UnresolvedOperand> time_symbols;
+  if (parser.parseKeyword("time_symbols") ||
+      parser.parseOperandList(time_symbols, AsmParser::Delimiter::Paren)) {
+    return failure();
+  }
+
+  // FIXME: Can't have optional attr dict before region.
+  if (parser.parseOptionalAttrDict(result.attributes)) {
+    return failure();
+  }
+
+  // FIXME: We never parsed any region arguments.
+  std::unique_ptr<Region> region;
+  if (const auto maybe = parser.parseOptionalRegion(region, {});
+      maybe.has_value() && maybe.value()) {
+    return failure();
+  }
+
+  if (region) {
+    if (input_vector.location.isValid()) {
       return parser.emitError(parser.getNameLoc())
              << "for composite_store, input_vector and region can't co-exist";
     }
-    op_result = op_result || region_parse_result.value();
-    props.have_input_vector = builder.getBoolAttr(false);
-  }
-  CompositeStoreOp::ensureTerminator(*body, builder, result.location);
-  // parse memref type
-  op_result = op_result || parser.parseColonType(memref_type);
-  // parse optional input_vector type
-  if (getHaveInputVector) {
-    op_result =
-        op_result || parser.parseComma() || parser.parseType(input_vector_type);
+
+    CompositeStoreOp::ensureTerminator(*region, parser.getBuilder(),
+                                       result.location);
   }
 
-  // resolve operands
-  op_result =
-      op_result ||
-      parser.resolveOperand(memref_info, memref_type, result.operands) ||
-      parser.resolveOperands(map_operands, index_type, result.operands);
-  if (getHaveInputVector) {
-    op_result =
-        op_result ||
-        parser.resolveOperand(input_vector, input_vector_type, result.operands);
-  }
-  op_result = op_result || parser.resolveOperands(time_symbols_operands,
-                                                  index_type, result.operands);
-
-  props.num_memref_indices = builder.getI32IntegerAttr(map_operands.size());
-
-  // make sure getHaveInputVector attribute exists
-  std::optional<NamedAttribute> getHaveInputVector_attr =
-      result.attributes.getNamed(
-          CompositeStoreOp::getHaveInputVectorAttrName(result.name));
-  if (!getHaveInputVector_attr.has_value() && !props.have_input_vector) {
-    return parser.emitError(parser.getNameLoc())
-           << "composite store requires getHaveInputVector attribute";
+  Type mem_ref_type;
+  if (parser.parseColonType(mem_ref_type)) {
+    return failure();
   }
 
-  std::optional<NamedAttribute> store_set_attr = result.attributes.getNamed(
-      CompositeStoreOp::getStoreSetAttrName(result.name));
-  std::optional<NamedAttribute> store_order_attr = result.attributes.getNamed(
-      CompositeStoreOp::getStoreOrderAttrName(result.name));
-  if (store_set_attr.has_value() == getHaveInputVector ||
-      store_order_attr.has_value() == getHaveInputVector) {
-    return parser.emitError(parser.getNameLoc())
-           << "either store_set/order or input vector has to be present in "
-              "composite store";
-  }
-
-  if (!getHaveInputVector) {
-    auto store_set =
-        mlir::dyn_cast<IntegerSetAttr>(store_set_attr->getValue()).getValue();
-    // TODO: enhance this with finding constant values and make sure they match.
-    if (store_set.getNumDims() < props.affine_map.getValue().getNumResults()) {
-      return parser.emitError(parser.getNameLoc())
-             << "Store set and Array dimensions should match";
+  Type input_vector_type;
+  if (input_vector.location.isValid()) {
+    if (parser.parseComma() || parser.parseType(input_vector_type)) {
+      return failure();
     }
+  }
 
-    auto store_order =
-        mlir::dyn_cast<AffineMapAttr>(store_order_attr->getValue()).getValue();
-    if (store_set.getNumDims() != store_order.getNumDims()) {
-      return parser.emitError(parser.getNameLoc())
-             << "Store set and order dimensions should match";
-    }
-  } else {
+  const auto index_type = parser.getBuilder().getIndexType();
+  if (parser.resolveOperand(mem_ref, mem_ref_type, result.operands) ||
+      parser.resolveOperands(map_operands, index_type, result.operands)) {
+    return failure();
+  }
+  if (input_vector.location.isValid() &&
+      parser.resolveOperand(input_vector, input_vector_type, result.operands)) {
+    return failure();
+  }
+  if (parser.resolveOperands(time_symbols, index_type, result.operands)) {
+    return failure();
+  }
+
+  props.operandSegmentSizes = {
+      1,
+      static_cast<int32_t>(map_operands.size()),
+      input_vector.location.isValid() ? 1 : 0,
+      static_cast<int32_t>(time_symbols.size()),
+  };
+
+  if (input_vector.location.isValid()) {
     // for coalesce store, store_order attr is not allowed from users. so set
     // store_order to Identity map
     auto num_of_layout_dims = props.affine_map.getValue().getResults().size();
     props.store_order = AffineMapAttr::get(AffineMap::getMultiDimIdentityMap(
-        num_of_layout_dims, builder.getContext()));
+        num_of_layout_dims, parser.getBuilder().getContext()));
   }
 
-  return failure(op_result);
+  return success();
+}
+
+auto CompositeStoreOp::verify() -> LogicalResult {
+  const auto has_input_vector = getInputVector() != nullptr;
+  const auto store_set = getStoreSet();
+  const auto store_order = getStoreOrder();
+  if (store_set.has_value() == has_input_vector ||
+      store_order.has_value() == has_input_vector) {
+    return emitOpError()
+           << "either store_set/order or input vector has to be present in "
+              "composite store";
+  }
+
+  if (!has_input_vector) {
+    // TODO: enhance this with finding constant values and make sure they match.
+    if (store_set->getValue().getNumDims() < getAffineMap().getNumResults()) {
+      return emitOpError() << "store set and Array dimensions should match";
+    }
+
+    if (store_set->getValue().getNumDims() != store_order->getNumDims()) {
+      return emitOpError() << "store set and order dimensions should match";
+    }
+  }
+
+  return success();
 }
 
 void CompositeStoreOp::print(OpAsmPrinter& p) {
-  auto& op = *this;
-  p << ' ' << op.getMemRef() << '[';
-  if (AffineMapAttr map_attr =
-          op->getAttrOfType<AffineMapAttr>(op.getMapAttrStrName()))
-    p.printAffineMapOfSSAIds(map_attr, op.getMapIndices());
-  p << ']';
+  p << ' ' << getMemRef();
+  printAffineMapOfSSAIds(p, *this, getAffineMapAttr(), getMapOperands());
   p.printNewline();
-  if (op.getHaveInputVector()) {
-    p << "input_vector=";
-    p.printOperand(op.getInputVector().value());
+  const auto input_vector = getInputVector();
+  if (input_vector != nullptr) {
+    p << "input_vector=" << input_vector;
   }
   p << " time_symbols(";
-  p.printOperands(op.getTimeSymbols());
+  p.printOperands(getTimeSymbols());
   p << ')';
   p.printNewline();
-  if (op.getHaveInputVector()) {
+  if (input_vector != nullptr) {
     p.printOptionalAttrDict(
-        op->getAttrs(),
-        /*elidedAttrs=*/{op.getMapAttrStrName(),
-                         op.getNumMemrefIndicesAttrName(),
-                         op.getHaveInputVectorAttrName(),
-                         op.getStoreOrderAttrName(), op.getStoreSetAttrName()});
+        (*this)->getAttrs(),
+        /*elidedAttrs=*/{getMapAttrStrName(), getOperandSegmentSizesAttrName(),
+                         getStoreOrderAttrName(), getStoreSetAttrName()});
   } else {
-    p.printOptionalAttrDict(op->getAttrs(),
-                            /*elidedAttrs=*/{op.getMapAttrStrName(),
-                                             op.getNumMemrefIndicesAttrName(),
-                                             op.getHaveInputVectorAttrName()});
+    p.printOptionalAttrDict((*this)->getAttrs(),
+                            /*elidedAttrs=*/{getMapAttrStrName(),
+                                             getOperandSegmentSizesAttrName()});
   }
   p.printNewline();
-  if (!op.getHaveInputVector()) {
-    p.printRegion(op.getRegion(), false, true);
+  if (input_vector == nullptr) {
+    p.printRegion(getRegion(), false, true);
   }
-  p << " : " << op.getMemRef().getType();
-  if (op.getHaveInputVector()) {
-    if (auto vtype = dyn_cast<VectorType>(getInputVector().value().getType()))
-      p << " , " << vtype;
-    else if (auto custom_vtype = dyn_cast<dataflow::CustomVectorType>(
-                 getInputVector().value().getType()))
-      p << " , " << custom_vtype;
+  p << " : " << getMemRef().getType();
+  if (input_vector != nullptr) {
+    p << " , " << input_vector.getType();
   }
 }
 
-void CompositeStoreOp::build(
-    OpBuilder& builder, OperationState& result, Value memref,
-    /*optional*/ mlir::StringAttr dbgName, AffineMap map, ValueRange operands,
-    /*optional*/ IntegerSet store_set,
-    /*optional*/ AffineMap store_order, IntegerSet time_set,
-    AffineMap time_order, AffineMap time_addr_map, uint32_t num_memref_indices,
-    CompositeStoreOp::BodyBuilderFn bodyBuilder) {
+void CompositeStoreOp::build(OpBuilder& builder, OperationState& result,
+                             Value memref,
+                             /*optional*/ StringAttr dbg_name, AffineMap map,
+                             ValueRange map_operands,
+                             /*optional*/ IntegerSet store_set,
+                             /*optional*/ AffineMap store_order,
+                             ValueRange time_symbols, IntegerSet time_set,
+                             AffineMap time_order, AffineMap time_addr_map) {
   auto& props = result.getOrAddProperties<Properties>();
 
   assert((store_set.getNumDims() == store_order.getNumDims()) &&
@@ -845,25 +834,27 @@ void CompositeStoreOp::build(
          "match with each other");
 
   result.addOperands(memref);
-  result.addOperands(operands);
+  result.addOperands(map_operands);
+  result.addOperands(time_symbols);
 
-  props.dbgName = dbgName;
+  props.dbg_name = dbg_name;
   props.affine_map = AffineMapAttr::get(map);
   props.store_set = IntegerSetAttr::get(store_set);
   props.store_order = AffineMapAttr::get(store_order);
   props.time_set = IntegerSetAttr::get(time_set);
   props.time_order = AffineMapAttr::get(time_order);
   props.time_addr_map = AffineMapAttr::get(time_addr_map);
-  props.num_memref_indices = builder.getI32IntegerAttr(num_memref_indices);
 
-  for (auto operand : operands) {
+  props.operandSegmentSizes = {1, static_cast<int32_t>(map_operands.size()), 0,
+                               static_cast<int32_t>(time_symbols.size())};
+
+  for (auto operand : result.operands) {
     bool is_vector_type =
         mlir::isa<VectorType, dataflow::CustomVectorType>(operand.getType());
     assert((!is_vector_type) &&
            "Operands of composite_store op can't contain VectorType item for "
            "non-coalesce store");
   }
-  props.have_input_vector = builder.getBoolAttr(false);
 
   // Add a body region with block arguments
   Region* bodyRegion = result.addRegion();
@@ -873,11 +864,10 @@ void CompositeStoreOp::build(
 
 void CompositeStoreOp::build(OpBuilder& builder, OperationState& result,
                              Value memref,
-                             /*optional*/ mlir::StringAttr dbgName,
-                             AffineMap map, ValueRange operands,
-                             IntegerSet time_set, AffineMap time_order,
-                             AffineMap time_addr_map,
-                             uint32_t num_memref_indices) {
+                             /*optional*/ StringAttr dbg_name, AffineMap map,
+                             ValueRange map_operands, Value input_vector,
+                             ValueRange time_symbols, IntegerSet time_set,
+                             AffineMap time_order, AffineMap time_addr_map) {
   auto& props = result.getOrAddProperties<Properties>();
 
   // checks
@@ -892,19 +882,22 @@ void CompositeStoreOp::build(OpBuilder& builder, OperationState& result,
          "match with each other");
 
   result.addOperands(memref);
-  result.addOperands(operands);
+  result.addOperands(map_operands);
+  result.addOperands(input_vector);
+  result.addOperands(time_symbols);
 
-  props.dbgName = dbgName;
+  props.dbg_name = dbg_name;
   props.affine_map = AffineMapAttr::get(map);
   props.time_set = IntegerSetAttr::get(time_set);
   props.time_order = AffineMapAttr::get(time_order);
   props.time_addr_map = AffineMapAttr::get(time_addr_map);
-  props.num_memref_indices = builder.getI32IntegerAttr(num_memref_indices);
 
-  bool is_vector_type =
-      mlir::isa<VectorType, dataflow::CustomVectorType>(operands[0].getType());
-  assert((is_vector_type) && "input vector is required for coalesce store");
-  props.have_input_vector = builder.getBoolAttr(true);
+  props.operandSegmentSizes = {1, static_cast<int32_t>(map_operands.size()), 1,
+                               static_cast<int32_t>(time_symbols.size())};
+
+  const auto is_vector =
+      isa<VectorType, dataflow::CustomVectorType>(input_vector.getType());
+  assert(is_vector && "input vector is required for coalesce store");
 
   // for coalesce store, store_order attr is not allowed from users. so set
   // store_order to Identity map
@@ -920,44 +913,31 @@ void CompositeStoreOp::build(OpBuilder& builder, OperationState& result,
 }
 
 CompositeStoreOp CompositeStoreOp::cloneWithNewAccessInfo(
-    OpBuilder& builder, const Value& mem_view, AffineMap& subscripts_map,
-    const SmallVectorImpl<Value>& indices, const IntegerSet& time_set) {
-  // Gather the operands for the new op. These are ordered as follows:
-  //   <indices>, <input vector>, <time symbols>
-  SmallVector<Value, 16> operands;
-  for (auto& index : indices) operands.push_back(index);
-  int remaining_operands_idx = getNumMemrefIndices();
-  if (getHaveInputVector()) {
-    operands.emplace_back(getInputVector().value());
-    ++remaining_operands_idx;
-  }
-  for (std::size_t i = remaining_operands_idx; i < getOperands1().size(); ++i)
-    operands.emplace_back(getOperands1()[i]);
-
-  // Create the new comp op in the innermost loop. Builder should already be set
-  // to correct location.
-  auto& op = *this;
-  auto new_comp_store = CompositeStoreOp::create(
-      builder, op->getLoc(), mem_view,
-      getDbgName().has_value() ? builder.getStringAttr(getDbgName().value())
-                               : builder.getStringAttr(""),
-      subscripts_map, operands, getStoreSet()->getValue(),
-      getStoreOrder().value(), time_set, getTimeOrder(), getTimeAddrMap(),
-      indices.size());
+    OpBuilder& builder, Value mem_view, const AffineMap& subscripts_map,
+    ValueRange indices, const IntegerSet& time_set) {
+  // FIXME: This code does not handle the case when getInputVector() != nullptr.
+  //        It didn't do this before either: while it added it to the operands,
+  //        it did not select the builder to call based on it. It always calls
+  //        the following builder, which handles the no input vector case:
+  auto result = CompositeStoreOp::create(
+      builder, getLoc(), mem_view, getDbgNameAttr(), subscripts_map, indices,
+      getStoreSetAttr() ? getStoreSetAttr().getValue() : IntegerSet(nullptr),
+      getStoreOrder().value_or(AffineMap(nullptr)), getTimeSymbols(), time_set,
+      getTimeOrder(), getTimeAddrMap());
 
   // Delete the yield op automatically inserted to the body. When the original
   // loop body is cloned, the appropriate yield op will also be cloned.
-  auto terminator = new_comp_store.getRegion().back().getTerminator();
+  auto terminator = result.getRegion().back().getTerminator();
   if (terminator) terminator->erase();
 
   // Clone the body.
   auto insert_pt = builder.saveInsertionPoint();
-  builder.setInsertionPointToStart(&new_comp_store.getRegion().front());
+  builder.setInsertionPointToStart(&result.getRegion().front());
   IRMapping ir_map;
   for (auto& o : getRegion().getOps()) (void)builder.clone(*&o, ir_map);
   builder.restoreInsertionPoint(insert_pt);
 
-  return new_comp_store;
+  return result;
 }
 
 //===----------------------------------------------------------------------===//

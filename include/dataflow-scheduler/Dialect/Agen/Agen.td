@@ -479,78 +479,51 @@ def Agen_CompositeLoadOp:Agen_Op<"composite_load", [
   }];
 }
 
-//===----------------------------------------------------------------------===//
-// Operations (cont'd)
-//===----------------------------------------------------------------------===//
-
-// FIXME: All these operations have problematic definitions due to improper use
-//        of ODS that need to be updated.
-
-def Agen_CompositeStoreOp:Agen_Op<"composite_store",
-        [DeclareOpInterfaceMethods<AffineMapAccessInterface>,
-        MemRefsNormalizable,
-        ImplicitAgenTerminator]> {
-
+def Agen_CompositeStoreOp:Agen_Op<"composite_store", [
+    DeclareOpInterfaceMethods<AffineMapAccessInterface>,
+    MemRefsNormalizable,
+    ImplicitAgenTerminator,
+    AttrSizedOperandSegments]> {
   let summary = "agen composite store operation";
-  let arguments = (ins Arg<AnyMemRef, "the reference to store to",
-        [MemWrite]>:$mem_ref,
-        OptionalAttr<StrAttr>:$dbgName,
-        AffineMapAttr:$affine_map,
-        OptionalAttr<Builtin_IntegerSetAttr>:$store_set,
-        OptionalAttr<AffineMapAttr>:$store_order,
-        Builtin_IntegerSetAttr:$time_set,
-        AffineMapAttr:$time_order,
-        AffineMapAttr:$time_addr_map,
-        I32Attr:$num_memref_indices,
-        BoolAttr:$have_input_vector,
-        Variadic<AnyType>:$operands1);
+  let arguments = (ins
+    Arg<AnyMemRef, "the reference to store to", [MemWrite]>:$mem_ref,
+    OptionalAttr<StrAttr>:$dbg_name,
+    AffineMapAttr:$affine_map,
+    Variadic<Index>:$map_operands,
+    Optional<AnyVectorOfAnyRank>:$input_vector,
+    OptionalAttr<Builtin_IntegerSetAttr>:$store_set,
+    OptionalAttr<AffineMapAttr>:$store_order,
+    Variadic<Index>:$time_symbols,
+    Builtin_IntegerSetAttr:$time_set,
+    AffineMapAttr:$time_order,
+    AffineMapAttr:$time_addr_map);
   let regions = (region AnyRegion:$region);
 
-
   let skipDefaultBuilders = 1;
-  let hasCustomAssemblyFormat = 1;
-
   let builders = [
     /// Builds a composite store op with store_set, store_order and region but no input vector.
-    OpBuilder<(ins "Value":$memref, "mlir::StringAttr":$dbgName, "mlir::AffineMap":$map, "ValueRange":$operands1, "IntegerSet":$store_set,
-      "mlir::AffineMap":$store_order, "IntegerSet":$time_set, "mlir::AffineMap":$time_order,
-      "mlir::AffineMap":$time_addr_map, "uint32_t":$num_memref_indices,
-      CArg<"function_ref<void(OpBuilder &, Location, Value, ValueRange)>",
-           "nullptr">:$bodyBuilder)>,
+    OpBuilder<(ins
+      "Value":$mem_ref, "StringAttr":$dbg_name, "AffineMap":$map, "ValueRange":$map_operands,
+      "IntegerSet":$store_set, "AffineMap":$store_order, "ValueRange":$time_symbols,
+      "IntegerSet":$time_set, "AffineMap":$time_order, "AffineMap":$time_addr_map)>,
     /// Builds a composite store op with input vector but no store_set, store_order or region.
-    OpBuilder<(ins "Value":$memref, "mlir::StringAttr":$dbgName, "mlir::AffineMap":$map, "ValueRange":$operands1, "IntegerSet":$time_set,
-      "mlir::AffineMap":$time_order, "mlir::AffineMap":$time_addr_map, "uint32_t":$num_memref_indices)>
+    OpBuilder<(ins
+      "Value":$mem_ref, "StringAttr":$dbg_name, "AffineMap":$map, "ValueRange":$map_operands,
+      "Value":$input_vector, "ValueRange":$time_symbols, "IntegerSet":$time_set,
+      "AffineMap":$time_order, "AffineMap":$time_addr_map)>
   ];
 
-  let extraClassDeclaration =  [{
-    using BodyBuilderFn =
-        function_ref<void(OpBuilder &, Location, Value, ValueRange)>;
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 
+  let extraClassDeclaration =  [{
     // Returns the memref value type.
     [[deprecated("use getMemRef().getType()")]]
     MemRefType getMemRefType() { return getMemRef().getType(); }
 
+    [[deprecated("use getMapOperands()")]]
     ::mlir::Operation::operand_range getMapIndices() {
-      return getOperands1().slice(0, getNumMemrefIndices());
-    }
-
-    const ::mlir::Operation::operand_range getTimeSymbols() {
-      auto time_symbols_size = getOperands1().size() - (getHaveInputVector() ? 1 : 0) - getNumMemrefIndices();
-      return getOperands1().slice(getNumMemrefIndices() + (getHaveInputVector() ? 1 : 0), time_symbols_size);
-    }
-
-    std::optional<Value> getInputVector() {
-      if (getHaveInputVector()) {
-        return getOperands1()[getNumMemrefIndices()];
-      }
-      return std::nullopt;
-    }
-
-    std::optional<VectorType> getInputVectorType() {
-      if (getHaveInputVector()) {
-        return dyn_cast<VectorType>(getInputVector().value().getType());
-      }
-      return std::nullopt;
+      return getMapOperands();
     }
 
     // TODO need to consider Non-constant time symbols...
@@ -563,8 +536,8 @@ def Agen_CompositeStoreOp:Agen_Op<"composite_store",
     }
 
     CompositeStoreOp cloneWithNewAccessInfo(OpBuilder &builder,
-        const Value &mem_view, AffineMap &subscripts_map,
-        const SmallVectorImpl<Value> &indices, const IntegerSet &time_set);
+        Value mem_view, const AffineMap &subscripts_map,
+        ValueRange indices, const IntegerSet &time_set);
 
     //===------------------------------------------------------------------===//
     // AffineMapAccessInterface
