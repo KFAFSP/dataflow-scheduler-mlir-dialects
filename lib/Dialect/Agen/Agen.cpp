@@ -540,12 +540,12 @@ ParseResult CompositeLoadOp::parse(OpAsmParser& parser,
 
   IntegerAttr num_memref_indices_attr =
       builder.getI32IntegerAttr(map_operands.size());
-  result.attributes.push_back(
-      builder.getNamedAttr(CompositeLoadOp::getNumMemrefIndicesAttrStrName(),
-                           num_memref_indices_attr));
+  result.attributes.push_back(builder.getNamedAttr(
+      CompositeLoadOp::getNumMemrefIndicesAttrName(result.name),
+      num_memref_indices_attr));
 
-  std::optional<NamedAttribute> load_set_attr =
-      result.attributes.getNamed(CompositeLoadOp::getLoadSetAttrStrName());
+  std::optional<NamedAttribute> load_set_attr = result.attributes.getNamed(
+      CompositeLoadOp::getLoadSetAttrName(result.name));
   if (!load_set_attr.has_value()) {
     return parser.emitError(parser.getNameLoc())
            << "Load set is missing in the operation";
@@ -560,8 +560,8 @@ ParseResult CompositeLoadOp::parse(OpAsmParser& parser,
            << "Load set and Array dimensions should match";
   }
 
-  std::optional<NamedAttribute> load_order_attr =
-      result.attributes.getNamed(CompositeLoadOp::getLoadOrderMapAttrStrName());
+  std::optional<NamedAttribute> load_order_attr = result.attributes.getNamed(
+      CompositeLoadOp::getLoadOrderAttrName(result.name));
   if (load_order_attr.has_value()) {
     auto load_order =
         mlir::dyn_cast<AffineMapAttr>(load_order_attr->getValue()).getValue();
@@ -591,10 +591,9 @@ void CompositeLoadOp::print(OpAsmPrinter& p) {
   p << '(' << op.getLoadInductionVar() << ':' << op.getLoadInductionVarType()
     << ')';
   p.printNewline();
-  p.printOptionalAttrDict(
-      op->getAttrs(),
-      /*elidedAttrs=*/{op.getMapAttrStrName(),
-                       op.getNumMemrefIndicesAttrStrName()});
+  p.printOptionalAttrDict(op->getAttrs(),
+                          /*elidedAttrs=*/{op.getMapAttrStrName(),
+                                           op.getNumMemrefIndicesAttrName()});
   p.printNewline();
   p.printRegion(op.getRegion(), false, true);
   p << " : " << op.getMemRefType();
@@ -628,16 +627,18 @@ void CompositeLoadOp::build(OpBuilder& builder, OperationState& result,
   result.addOperands(memref);
   result.addOperands(operands);
   if (dbgName) result.addAttribute(getDbgNameAttrName(result.name), dbgName);
-  result.addAttribute(getLoadSetAttrStrName(), IntegerSetAttr::get(load_set));
+  result.addAttribute(getLoadSetAttrName(result.name),
+                      IntegerSetAttr::get(load_set));
   result.addAttribute(getMapAttrStrName(), AffineMapAttr::get(map));
-  result.addAttribute(getLoadOrderMapAttrStrName(),
+  result.addAttribute(getLoadOrderAttrName(result.name),
                       AffineMapAttr::get(load_order));
-  result.addAttribute(getTimeSetAttrStrName(), IntegerSetAttr::get(time_set));
-  result.addAttribute(getTimeOrderMapAttrStrName(),
+  result.addAttribute(getTimeSetAttrName(result.name),
+                      IntegerSetAttr::get(time_set));
+  result.addAttribute(getTimeOrderAttrName(result.name),
                       AffineMapAttr::get(time_order));
-  result.addAttribute(getTimeAddrMapAttrStrName(),
+  result.addAttribute(getTimeAddrMapAttrName(result.name),
                       AffineMapAttr::get(time_addr_map));
-  result.addAttribute(getNumMemrefIndicesAttrStrName(),
+  result.addAttribute(getNumMemrefIndicesAttrName(result.name),
                       builder.getI32IntegerAttr(num_memref_indices));
   // Add a body region with block arguments
   Region* bodyRegion = result.addRegion();
@@ -721,8 +722,9 @@ ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
   if (succeeded(parser.parseOptionalKeyword("input_vector"))) {
     op_result =
         op_result || parser.parseEqual() || parser.parseOperand(input_vector);
-    result.addAttribute(CompositeStoreOp::getHaveInputVectorAttrStrName(),
-                        builder.getBoolAttr(true));
+    result.addAttribute(
+        CompositeStoreOp::getHaveInputVectorAttrName(result.name),
+        builder.getBoolAttr(true));
     getHaveInputVector = true;
   }
   // parse time symbols and attributes
@@ -739,8 +741,9 @@ ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
              << "for composite_store, input_vector and region can't co-exist";
     }
     op_result = op_result || region_parse_result.value();
-    result.addAttribute(CompositeStoreOp::getHaveInputVectorAttrStrName(),
-                        builder.getBoolAttr(false));
+    result.addAttribute(
+        CompositeStoreOp::getHaveInputVectorAttrName(result.name),
+        builder.getBoolAttr(false));
   }
   CompositeStoreOp::ensureTerminator(*body, builder, result.location);
   // parse memref type
@@ -766,23 +769,23 @@ ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
 
   IntegerAttr num_memref_indices_attr =
       builder.getI32IntegerAttr(map_operands.size());
-  result.attributes.push_back(
-      builder.getNamedAttr(CompositeLoadOp::getNumMemrefIndicesAttrStrName(),
-                           num_memref_indices_attr));
+  result.attributes.push_back(builder.getNamedAttr(
+      CompositeLoadOp::getNumMemrefIndicesAttrName(result.name),
+      num_memref_indices_attr));
 
   // make sure getHaveInputVector attribute exists
   std::optional<NamedAttribute> getHaveInputVector_attr =
       result.attributes.getNamed(
-          CompositeStoreOp::getHaveInputVectorAttrStrName());
+          CompositeStoreOp::getHaveInputVectorAttrName(result.name));
   if (!getHaveInputVector_attr.has_value()) {
     return parser.emitError(parser.getNameLoc())
            << "composite store requires getHaveInputVector attribute";
   }
 
-  std::optional<NamedAttribute> store_set_attr =
-      result.attributes.getNamed(CompositeStoreOp::getStoreSetAttrStrName());
+  std::optional<NamedAttribute> store_set_attr = result.attributes.getNamed(
+      CompositeStoreOp::getStoreSetAttrName(result.name));
   std::optional<NamedAttribute> store_order_attr = result.attributes.getNamed(
-      CompositeStoreOp::getStoreOrderMapAttrStrName());
+      CompositeStoreOp::getStoreOrderAttrName(result.name));
   if (store_set_attr.has_value() == getHaveInputVector ||
       store_order_attr.has_value() == getHaveInputVector) {
     return parser.emitError(parser.getNameLoc())
@@ -811,7 +814,7 @@ ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
     auto num_of_layout_dims = map_attr.getValue().getResults().size();
     auto store_order_map = AffineMap::getMultiDimIdentityMap(
         num_of_layout_dims, builder.getContext());
-    result.addAttribute(CompositeStoreOp::getStoreOrderMapAttrStrName(),
+    result.addAttribute(CompositeStoreOp::getStoreOrderAttrName(result.name),
                         AffineMapAttr::get(store_order_map));
   }
 
@@ -837,16 +840,15 @@ void CompositeStoreOp::print(OpAsmPrinter& p) {
   if (op.getHaveInputVector()) {
     p.printOptionalAttrDict(
         op->getAttrs(),
-        /*elidedAttrs=*/{
-            op.getMapAttrStrName(), op.getNumMemrefIndicesAttrStrName(),
-            op.getHaveInputVectorAttrStrName(),
-            op.getStoreOrderMapAttrStrName(), op.getStoreSetAttrStrName()});
-  } else {
-    p.printOptionalAttrDict(
-        op->getAttrs(),
         /*elidedAttrs=*/{op.getMapAttrStrName(),
-                         op.getNumMemrefIndicesAttrStrName(),
-                         op.getHaveInputVectorAttrStrName()});
+                         op.getNumMemrefIndicesAttrName(),
+                         op.getHaveInputVectorAttrName(),
+                         op.getStoreOrderAttrName(), op.getStoreSetAttrName()});
+  } else {
+    p.printOptionalAttrDict(op->getAttrs(),
+                            /*elidedAttrs=*/{op.getMapAttrStrName(),
+                                             op.getNumMemrefIndicesAttrName(),
+                                             op.getHaveInputVectorAttrName()});
   }
   p.printNewline();
   if (!op.getHaveInputVector()) {
@@ -889,20 +891,21 @@ void CompositeStoreOp::build(
   result.addOperands(operands);
   if (dbgName) result.addAttribute(getDbgNameAttrName(result.name), dbgName);
   if (store_set) {
-    result.addAttribute(getStoreSetAttrStrName(),
+    result.addAttribute(getStoreSetAttrName(result.name),
                         IntegerSetAttr::get(store_set));
   }
   result.addAttribute(getMapAttrStrName(), AffineMapAttr::get(map));
   if (store_order) {
-    result.addAttribute(getStoreOrderMapAttrStrName(),
+    result.addAttribute(getStoreOrderAttrName(result.name),
                         AffineMapAttr::get(store_order));
   }
-  result.addAttribute(getTimeSetAttrStrName(), IntegerSetAttr::get(time_set));
-  result.addAttribute(getTimeOrderMapAttrStrName(),
+  result.addAttribute(getTimeSetAttrName(result.name),
+                      IntegerSetAttr::get(time_set));
+  result.addAttribute(getTimeOrderAttrName(result.name),
                       AffineMapAttr::get(time_order));
-  result.addAttribute(getTimeAddrMapAttrStrName(),
+  result.addAttribute(getTimeAddrMapAttrName(result.name),
                       AffineMapAttr::get(time_addr_map));
-  result.addAttribute(getNumMemrefIndicesAttrStrName(),
+  result.addAttribute(getNumMemrefIndicesAttrName(result.name),
                       builder.getI32IntegerAttr(num_memref_indices));
   for (auto operand : operands) {
     bool is_vector_type =
@@ -911,7 +914,7 @@ void CompositeStoreOp::build(
            "Operands of composite_store op can't contain VectorType item for "
            "non-coalesce store");
   }
-  result.addAttribute(getHaveInputVectorAttrStrName(),
+  result.addAttribute(getHaveInputVectorAttrName(result.name),
                       builder.getBoolAttr(false));
 
   // Add a body region with block arguments
@@ -942,24 +945,25 @@ void CompositeStoreOp::build(OpBuilder& builder, OperationState& result,
   result.addOperands(operands);
   if (dbgName) result.addAttribute(getDbgNameAttrName(result.name), dbgName);
   result.addAttribute(getMapAttrStrName(), AffineMapAttr::get(map));
-  result.addAttribute(getTimeSetAttrStrName(), IntegerSetAttr::get(time_set));
-  result.addAttribute(getTimeOrderMapAttrStrName(),
+  result.addAttribute(getTimeSetAttrName(result.name),
+                      IntegerSetAttr::get(time_set));
+  result.addAttribute(getTimeOrderAttrName(result.name),
                       AffineMapAttr::get(time_order));
-  result.addAttribute(getTimeAddrMapAttrStrName(),
+  result.addAttribute(getTimeAddrMapAttrName(result.name),
                       AffineMapAttr::get(time_addr_map));
-  result.addAttribute(getNumMemrefIndicesAttrStrName(),
+  result.addAttribute(getNumMemrefIndicesAttrName(result.name),
                       builder.getI32IntegerAttr(num_memref_indices));
   bool is_vector_type =
       mlir::isa<VectorType, dataflow::CustomVectorType>(operands[0].getType());
   assert((is_vector_type) && "input vector is required for coalesce store");
-  result.addAttribute(getHaveInputVectorAttrStrName(),
+  result.addAttribute(getHaveInputVectorAttrName(result.name),
                       builder.getBoolAttr(true));
   // for coalesce store, store_order attr is not allowed from users. so set
   // store_order to Identity map
   auto num_of_layout_dims = map.getResults().size();
   auto store_order_map = AffineMap::getMultiDimIdentityMap(
       num_of_layout_dims, builder.getContext());
-  result.addAttribute(getStoreOrderMapAttrStrName(),
+  result.addAttribute(getStoreOrderAttrName(result.name),
                       AffineMapAttr::get(store_order_map));
   // Add a body region with block arguments
   Region* bodyRegion = result.addRegion();
@@ -1037,45 +1041,47 @@ ParseResult CompositeIndirectLoadAndStoreOp::parse(OpAsmParser& parser,
 
   bool op_result = false;
   if (succeeded(parser.parseOptionalKeyword("indirect_src"))) {
-    op_result =
-        op_result || parser.parseColon() ||
-        parser.parseOperand(ind_src_memref_info) ||
-        parser.parseAffineMapOfSSAIds(
-            ind_src_map_operands, ind_src_map_attr,
-            CompositeIndirectLoadAndStoreOp::getIndirectSrcMapAttrStrName(),
-            result.attributes);
+    op_result = op_result || parser.parseColon() ||
+                parser.parseOperand(ind_src_memref_info) ||
+                parser.parseAffineMapOfSSAIds(
+                    ind_src_map_operands, ind_src_map_attr,
+                    CompositeIndirectLoadAndStoreOp::getIndirectSrcMapAttrName(
+                        result.name),
+                    result.attributes);
     has_ind_src = true;
   }
   if (op_result)
     return parser.emitError(parser.getNameLoc())
            << "error parsing indirect src";
-  op_result = op_result || parser.parseKeyword("direct_src") ||
-              parser.parseColon() || parser.parseOperand(dir_src_memref_info) ||
-              parser.parseAffineMapOfSSAIds(
-                  dir_src_map_operands, dir_src_map_attr,
-                  CompositeIndirectLoadAndStoreOp::getDirectSrcMapAttrStrName(),
-                  result.attributes);
+  op_result =
+      op_result || parser.parseKeyword("direct_src") || parser.parseColon() ||
+      parser.parseOperand(dir_src_memref_info) ||
+      parser.parseAffineMapOfSSAIds(
+          dir_src_map_operands, dir_src_map_attr,
+          CompositeIndirectLoadAndStoreOp::getDirectSrcMapAttrName(result.name),
+          result.attributes);
   if (op_result)
     return parser.emitError(parser.getNameLoc()) << "error parsing direct src";
   if (succeeded(parser.parseOptionalKeyword("indirect_dst"))) {
-    op_result =
-        op_result || parser.parseColon() ||
-        parser.parseOperand(ind_dst_memref_info) ||
-        parser.parseAffineMapOfSSAIds(
-            ind_dst_map_operands, ind_dst_map_attr,
-            CompositeIndirectLoadAndStoreOp::getIndirectDstMapAttrStrName(),
-            result.attributes);
+    op_result = op_result || parser.parseColon() ||
+                parser.parseOperand(ind_dst_memref_info) ||
+                parser.parseAffineMapOfSSAIds(
+                    ind_dst_map_operands, ind_dst_map_attr,
+                    CompositeIndirectLoadAndStoreOp::getIndirectDstMapAttrName(
+                        result.name),
+                    result.attributes);
     has_ind_dst = true;
   }
   if (op_result)
     return parser.emitError(parser.getNameLoc())
            << "error parsing indirect dst";
-  op_result = op_result || parser.parseKeyword("direct_dst") ||
-              parser.parseColon() || parser.parseOperand(dir_dst_memref_info) ||
-              parser.parseAffineMapOfSSAIds(
-                  dir_dst_map_operands, dir_dst_map_attr,
-                  CompositeIndirectLoadAndStoreOp::getDirectDstMapAttrStrName(),
-                  result.attributes);
+  op_result =
+      op_result || parser.parseKeyword("direct_dst") || parser.parseColon() ||
+      parser.parseOperand(dir_dst_memref_info) ||
+      parser.parseAffineMapOfSSAIds(
+          dir_dst_map_operands, dir_dst_map_attr,
+          CompositeIndirectLoadAndStoreOp::getDirectDstMapAttrName(result.name),
+          result.attributes);
   if (op_result)
     return parser.emitError(parser.getNameLoc()) << "error parsing direct dst";
   if (succeeded(parser.parseOptionalKeyword("multicast_info"))) {
@@ -1162,7 +1168,7 @@ ParseResult CompositeIndirectLoadAndStoreOp::parse(OpAsmParser& parser,
                                                   index_type, result.operands);
 
   std::optional<NamedAttribute> load_set_attr = result.attributes.getNamed(
-      CompositeIndirectLoadAndStoreOp::getLoadSetAttrStrName());
+      CompositeIndirectLoadAndStoreOp::getLoadSetAttrName(result.name));
   if (!load_set_attr.has_value()) {
     return parser.emitError(parser.getNameLoc())
            << "load set is missing in the operation";
@@ -1175,7 +1181,7 @@ ParseResult CompositeIndirectLoadAndStoreOp::parse(OpAsmParser& parser,
            << "load set and direct src array dimensions should match";
   }
   std::optional<NamedAttribute> load_order_attr = result.attributes.getNamed(
-      CompositeIndirectLoadAndStoreOp::getLoadOrderMapAttrStrName());
+      CompositeIndirectLoadAndStoreOp::getLoadOrderAttrName(result.name));
   if (load_order_attr.has_value()) {
     auto load_order =
         mlir::dyn_cast<AffineMapAttr>(load_order_attr->getValue()).getValue();
@@ -1189,7 +1195,7 @@ ParseResult CompositeIndirectLoadAndStoreOp::parse(OpAsmParser& parser,
   }
 
   std::optional<NamedAttribute> store_set_attr = result.attributes.getNamed(
-      CompositeIndirectLoadAndStoreOp::getStoreSetAttrStrName());
+      CompositeIndirectLoadAndStoreOp::getStoreSetAttrName(result.name));
   if (!store_set_attr.has_value()) {
     return parser.emitError(parser.getNameLoc())
            << "store set is missing in the operation";
@@ -1202,7 +1208,7 @@ ParseResult CompositeIndirectLoadAndStoreOp::parse(OpAsmParser& parser,
            << "store set and direct dst array dimensions should match";
   }
   std::optional<NamedAttribute> store_order_attr = result.attributes.getNamed(
-      CompositeIndirectLoadAndStoreOp::getStoreOrderMapAttrStrName());
+      CompositeIndirectLoadAndStoreOp::getStoreOrderAttrName(result.name));
   if (store_order_attr.has_value()) {
     auto store_order =
         mlir::dyn_cast<AffineMapAttr>(store_order_attr->getValue()).getValue();
@@ -1221,29 +1227,27 @@ void CompositeIndirectLoadAndStoreOp::print(OpAsmPrinter& p) {
   auto& op = *this;
   if (hasIndirectSrc()) {
     p << " indirect_src:" << op.getIndirectSrcMemref() << '[';
-    if (AffineMapAttr ind_src_map_attr =
-            op->getAttrOfType<AffineMapAttr>(op.getIndirectSrcMapAttrStrName()))
+    if (AffineMapAttr ind_src_map_attr = getIndirectSrcMapAttr();
+        ind_src_map_attr)
       p.printAffineMapOfSSAIds(ind_src_map_attr, op.getIndirectSrcMapIndices());
     p << ']';
   }
 
   p << " direct_src:" << op.getDirectSrcMemref() << '[';
-  if (AffineMapAttr dir_src_map_attr =
-          op->getAttrOfType<AffineMapAttr>(op.getDirectSrcMapAttrStrName()))
+  if (AffineMapAttr dir_src_map_attr = getDirectSrcMapAttr(); dir_src_map_attr)
     p.printAffineMapOfSSAIds(dir_src_map_attr, op.getDirectSrcMapIndices());
   p << ']';
 
   if (hasIndirectDst()) {
     p << " indirect_dst:" << op.getIndirectDstMemref() << '[';
-    if (AffineMapAttr ind_dst_map_attr =
-            op->getAttrOfType<AffineMapAttr>(op.getIndirectDstMapAttrStrName()))
+    if (AffineMapAttr ind_dst_map_attr = getIndirectDstMapAttr();
+        ind_dst_map_attr)
       p.printAffineMapOfSSAIds(ind_dst_map_attr, op.getIndirectDstMapIndices());
     p << ']';
   }
 
   p << " direct_dst:" << op.getDirectDstMemref() << '[';
-  if (AffineMapAttr dir_dst_map_attr =
-          op->getAttrOfType<AffineMapAttr>(op.getDirectDstMapAttrStrName()))
+  if (AffineMapAttr dir_dst_map_attr = getDirectDstMapAttr(); dir_dst_map_attr)
     p.printAffineMapOfSSAIds(dir_dst_map_attr, op.getDirectDstMapIndices());
   p << ']';
 
@@ -1259,8 +1263,8 @@ void CompositeIndirectLoadAndStoreOp::print(OpAsmPrinter& p) {
   p.printOptionalAttrDict(
       op->getAttrs(),
       /*elidedAttrs=*/{
-          op.getIndirectSrcMapAttrStrName(), op.getDirectSrcMapAttrStrName(),
-          op.getIndirectDstMapAttrStrName(), op.getDirectDstMapAttrStrName(),
+          op.getIndirectSrcMapAttrName(), op.getDirectSrcMapAttrName(),
+          op.getIndirectDstMapAttrName(), op.getDirectDstMapAttrName(),
           op.getOperandSegmentSizesAttrName()});
   p.printNewline();
   p.printRegion(op.getRegion(), false, true);
@@ -1351,31 +1355,34 @@ void CompositeIndirectLoadAndStoreOp::build(
   result.addOperands(operands);
 
   if (dbgName) result.addAttribute(getDbgNameAttrName(result.name), dbgName);
-  result.addAttribute(getIndirectSrcMapAttrStrName(),
+  result.addAttribute(getIndirectSrcMapAttrName(result.name),
                       AffineMapAttr::get(indirect_src_map));
-  result.addAttribute(getDirectSrcMapAttrStrName(),
+  result.addAttribute(getDirectSrcMapAttrName(result.name),
                       AffineMapAttr::get(direct_src_map));
-  result.addAttribute(getIndirectDstMapAttrStrName(),
+  result.addAttribute(getIndirectDstMapAttrName(result.name),
                       AffineMapAttr::get(indirect_dst_map));
-  result.addAttribute(getDirectDstMapAttrStrName(),
+  result.addAttribute(getDirectDstMapAttrName(result.name),
                       AffineMapAttr::get(direct_dst_map));
 
-  result.addAttribute(getLoadSetAttrStrName(), IntegerSetAttr::get(load_set));
-  result.addAttribute(getLoadOrderMapAttrStrName(),
+  result.addAttribute(getLoadSetAttrName(result.name),
+                      IntegerSetAttr::get(load_set));
+  result.addAttribute(getLoadOrderAttrName(result.name),
                       AffineMapAttr::get(load_order));
-  result.addAttribute(getStoreOrderMapAttrStrName(),
+  result.addAttribute(getStoreOrderAttrName(result.name),
                       AffineMapAttr::get(store_order));
-  result.addAttribute(getStoreSetAttrStrName(), IntegerSetAttr::get(store_set));
-  result.addAttribute(getTimeSetAttrStrName(), IntegerSetAttr::get(time_set));
-  result.addAttribute(getTimeOrderMapAttrStrName(),
+  result.addAttribute(getStoreSetAttrName(result.name),
+                      IntegerSetAttr::get(store_set));
+  result.addAttribute(getTimeSetAttrName(result.name),
+                      IntegerSetAttr::get(time_set));
+  result.addAttribute(getTimeOrderAttrName(result.name),
                       AffineMapAttr::get(time_order));
-  result.addAttribute(getLoadIndirectTimeAddrMapAttrStrName(),
+  result.addAttribute(getLoadIndirectTimeAddrMapAttrName(result.name),
                       AffineMapAttr::get(load_indirect_time_addr_map));
-  result.addAttribute(getLoadDirectTimeAddrMapAttrStrName(),
+  result.addAttribute(getLoadDirectTimeAddrMapAttrName(result.name),
                       AffineMapAttr::get(load_direct_time_addr_map));
-  result.addAttribute(getStoreIndirectTimeAddrMapAttrStrName(),
+  result.addAttribute(getStoreIndirectTimeAddrMapAttrName(result.name),
                       AffineMapAttr::get(store_indirect_time_addr_map));
-  result.addAttribute(getStoreDirectTimeAddrMapAttrStrName(),
+  result.addAttribute(getStoreDirectTimeAddrMapAttrName(result.name),
                       AffineMapAttr::get(store_direct_time_addr_map));
 
   result.addAttribute(
@@ -1499,7 +1506,7 @@ ParseResult CompositeIndirectLoadOp::parse(OpAsmParser& parser,
               parser.parseColon() || parser.parseOperand(ind_memref_info) ||
               parser.parseAffineMapOfSSAIds(
                   ind_map_operands, ind_map_attr,
-                  CompositeIndirectLoadOp::getIndirectMapAttrStrName(),
+                  CompositeIndirectLoadOp::getIndirectMapAttrName(result.name),
                   result.attributes);
   if (op_result)
     return parser.emitError(parser.getNameLoc()) << "error parsing indirect";
@@ -1508,7 +1515,7 @@ ParseResult CompositeIndirectLoadOp::parse(OpAsmParser& parser,
               parser.parseColon() || parser.parseOperand(dir_memref_info) ||
               parser.parseAffineMapOfSSAIds(
                   dir_map_operands, dir_map_attr,
-                  CompositeIndirectLoadOp::getDirectMapAttrStrName(),
+                  CompositeIndirectLoadOp::getDirectMapAttrName(result.name),
                   result.attributes);
   if (op_result)
     return parser.emitError(parser.getNameLoc()) << "error parsing direct";
@@ -1572,7 +1579,7 @@ ParseResult CompositeIndirectLoadOp::parse(OpAsmParser& parser,
                                                   index_type, result.operands);
 
   std::optional<NamedAttribute> load_set_attr = result.attributes.getNamed(
-      CompositeIndirectLoadOp::getLoadSetAttrStrName());
+      CompositeIndirectLoadOp::getLoadSetAttrName(result.name));
   if (!load_set_attr.has_value()) {
     return parser.emitError(parser.getNameLoc())
            << "load set is missing in the operation";
@@ -1585,7 +1592,7 @@ ParseResult CompositeIndirectLoadOp::parse(OpAsmParser& parser,
            << "load set and direct src array dimensions should match";
   }
   std::optional<NamedAttribute> load_order_attr = result.attributes.getNamed(
-      CompositeIndirectLoadOp::getLoadOrderMapAttrStrName());
+      CompositeIndirectLoadOp::getLoadOrderAttrName(result.name));
   if (load_order_attr.has_value()) {
     auto load_order =
         mlir::dyn_cast<AffineMapAttr>(load_order_attr->getValue()).getValue();
@@ -1604,14 +1611,12 @@ ParseResult CompositeIndirectLoadOp::parse(OpAsmParser& parser,
 void CompositeIndirectLoadOp::print(OpAsmPrinter& p) {
   auto& op = *this;
   p << " indirect:" << op.getIndirectMemref() << '[';
-  if (AffineMapAttr ind_map_attr =
-          op->getAttrOfType<AffineMapAttr>(op.getIndirectMapAttrStrName()))
+  if (AffineMapAttr ind_map_attr = getIndirectMapAttr(); ind_map_attr)
     p.printAffineMapOfSSAIds(ind_map_attr, op.getIndirectMapIndices());
   p << ']';
 
   p << " direct:" << op.getDirectMemref() << '[';
-  if (AffineMapAttr dir_map_attr =
-          op->getAttrOfType<AffineMapAttr>(op.getDirectMapAttrStrName()))
+  if (AffineMapAttr dir_map_attr = getDirectMapAttr(); dir_map_attr)
     p.printAffineMapOfSSAIds(dir_map_attr, op.getDirectMapIndices());
   p << ']';
 
@@ -1624,8 +1629,7 @@ void CompositeIndirectLoadOp::print(OpAsmPrinter& p) {
   p.printNewline();
   p.printOptionalAttrDict(
       op->getAttrs(),
-      /*elidedAttrs=*/{op.getIndirectMapAttrStrName(),
-                       op.getDirectMapAttrStrName(),
+      /*elidedAttrs=*/{op.getIndirectMapAttrName(), op.getDirectMapAttrName(),
                        op.getOperandSegmentSizesAttrName()});
   p.printNewline();
   p.printRegion(op.getRegion(), false, true);
@@ -1671,18 +1675,20 @@ void CompositeIndirectLoadOp::build(
   result.addOperands(operands);
 
   if (dbgName) result.addAttribute(getDbgNameAttrName(result.name), dbgName);
-  result.addAttribute(getIndirectMapAttrStrName(),
+  result.addAttribute(getIndirectMapAttrName(result.name),
                       AffineMapAttr::get(indirect_map));
-  result.addAttribute(getDirectMapAttrStrName(),
+  result.addAttribute(getDirectMapAttrName(result.name),
                       AffineMapAttr::get(direct_map));
 
-  result.addAttribute(getLoadSetAttrStrName(), IntegerSetAttr::get(load_set));
-  result.addAttribute(getLoadOrderMapAttrStrName(),
+  result.addAttribute(getLoadSetAttrName(result.name),
+                      IntegerSetAttr::get(load_set));
+  result.addAttribute(getLoadOrderAttrName(result.name),
                       AffineMapAttr::get(load_order));
-  result.addAttribute(getTimeSetAttrStrName(), IntegerSetAttr::get(time_set));
-  result.addAttribute(getTimeOrderMapAttrStrName(),
+  result.addAttribute(getTimeSetAttrName(result.name),
+                      IntegerSetAttr::get(time_set));
+  result.addAttribute(getTimeOrderAttrName(result.name),
                       AffineMapAttr::get(time_order));
-  result.addAttribute(getTimeAddrMapAttrStrName(),
+  result.addAttribute(getTimeAddrMapAttrName(result.name),
                       AffineMapAttr::get(time_addr_map));
 
   result.addAttribute(
@@ -1731,7 +1737,7 @@ ParseResult CompositeIndirectStoreOp::parse(OpAsmParser& parser,
               parser.parseColon() || parser.parseOperand(ind_memref_info) ||
               parser.parseAffineMapOfSSAIds(
                   ind_map_operands, ind_map_attr,
-                  CompositeIndirectStoreOp::getIndirectMapAttrStrName(),
+                  CompositeIndirectStoreOp::getIndirectMapAttrName(result.name),
                   result.attributes);
   if (op_result)
     return parser.emitError(parser.getNameLoc()) << "error parsing indirect";
@@ -1740,7 +1746,7 @@ ParseResult CompositeIndirectStoreOp::parse(OpAsmParser& parser,
               parser.parseColon() || parser.parseOperand(dir_memref_info) ||
               parser.parseAffineMapOfSSAIds(
                   dir_map_operands, dir_map_attr,
-                  CompositeIndirectStoreOp::getDirectMapAttrStrName(),
+                  CompositeIndirectStoreOp::getDirectMapAttrName(result.name),
                   result.attributes);
   if (op_result)
     return parser.emitError(parser.getNameLoc()) << "error parsing direct";
@@ -1795,7 +1801,7 @@ ParseResult CompositeIndirectStoreOp::parse(OpAsmParser& parser,
                                                   index_type, result.operands);
 
   std::optional<NamedAttribute> store_set_attr = result.attributes.getNamed(
-      CompositeIndirectStoreOp::getStoreSetAttrStrName());
+      CompositeIndirectStoreOp::getStoreSetAttrName(result.name));
   if (!store_set_attr.has_value()) {
     return parser.emitError(parser.getNameLoc())
            << "store set is missing in the operation";
@@ -1808,7 +1814,7 @@ ParseResult CompositeIndirectStoreOp::parse(OpAsmParser& parser,
            << "store set and direct array dimensions should match";
   }
   std::optional<NamedAttribute> store_order_attr = result.attributes.getNamed(
-      CompositeIndirectStoreOp::getStoreOrderMapAttrStrName());
+      CompositeIndirectStoreOp::getStoreOrderAttrName(result.name));
   if (store_order_attr.has_value()) {
     auto store_order =
         mlir::dyn_cast<AffineMapAttr>(store_order_attr->getValue()).getValue();
@@ -1827,14 +1833,12 @@ ParseResult CompositeIndirectStoreOp::parse(OpAsmParser& parser,
 void CompositeIndirectStoreOp::print(OpAsmPrinter& p) {
   auto& op = *this;
   p << " indirect:" << op.getIndirectMemref() << '[';
-  if (AffineMapAttr ind_map_attr =
-          op->getAttrOfType<AffineMapAttr>(op.getIndirectMapAttrStrName()))
+  if (AffineMapAttr ind_map_attr = getIndirectMapAttr(); ind_map_attr)
     p.printAffineMapOfSSAIds(ind_map_attr, op.getIndirectMapIndices());
   p << ']';
 
   p << " direct:" << op.getDirectMemref() << '[';
-  if (AffineMapAttr dir_map_attr =
-          op->getAttrOfType<AffineMapAttr>(op.getDirectMapAttrStrName()))
+  if (AffineMapAttr dir_map_attr = getDirectMapAttr(); dir_map_attr)
     p.printAffineMapOfSSAIds(dir_map_attr, op.getDirectMapIndices());
   p << ']';
 
@@ -1848,8 +1852,7 @@ void CompositeIndirectStoreOp::print(OpAsmPrinter& p) {
   p.printNewline();
   p.printOptionalAttrDict(
       op->getAttrs(),
-      /*elidedAttrs=*/{op.getIndirectMapAttrStrName(),
-                       op.getDirectMapAttrStrName(),
+      /*elidedAttrs=*/{op.getIndirectMapAttrName(), op.getDirectMapAttrName(),
                        op.getOperandSegmentSizesAttrName()});
   p.printNewline();
   p.printRegion(op.getRegion(), false, true);
@@ -1895,18 +1898,20 @@ void CompositeIndirectStoreOp::build(
   result.addOperands(operands);
 
   if (dbgName) result.addAttribute(getDbgNameAttrName(result.name), dbgName);
-  result.addAttribute(getIndirectMapAttrStrName(),
+  result.addAttribute(getIndirectMapAttrName(result.name),
                       AffineMapAttr::get(indirect_map));
-  result.addAttribute(getDirectMapAttrStrName(),
+  result.addAttribute(getDirectMapAttrName(result.name),
                       AffineMapAttr::get(direct_map));
 
-  result.addAttribute(getStoreOrderMapAttrStrName(),
+  result.addAttribute(getStoreOrderAttrName(result.name),
                       AffineMapAttr::get(store_order));
-  result.addAttribute(getStoreSetAttrStrName(), IntegerSetAttr::get(store_set));
-  result.addAttribute(getTimeSetAttrStrName(), IntegerSetAttr::get(time_set));
-  result.addAttribute(getTimeOrderMapAttrStrName(),
+  result.addAttribute(getStoreSetAttrName(result.name),
+                      IntegerSetAttr::get(store_set));
+  result.addAttribute(getTimeSetAttrName(result.name),
+                      IntegerSetAttr::get(time_set));
+  result.addAttribute(getTimeOrderAttrName(result.name),
                       AffineMapAttr::get(time_order));
-  result.addAttribute(getTimeAddrMapAttrStrName(),
+  result.addAttribute(getTimeAddrMapAttrName(result.name),
                       AffineMapAttr::get(time_addr_map));
 
   result.addAttribute(
@@ -1948,21 +1953,21 @@ ParseResult IndirectVectorLoadOp::parse(OpAsmParser& parser,
   bool has_multicast = false;
 
   bool op_result = false;
-  op_result =
-      op_result || parser.parseKeyword("indirect") || parser.parseColon() ||
-      parser.parseOperand(ind_memref_info) ||
-      parser.parseAffineMapOfSSAIds(
-          ind_map_operands, ind_map_attr,
-          IndirectVectorLoadOp::getIndirectMapAttrStrName(), result.attributes);
+  op_result = op_result || parser.parseKeyword("indirect") ||
+              parser.parseColon() || parser.parseOperand(ind_memref_info) ||
+              parser.parseAffineMapOfSSAIds(
+                  ind_map_operands, ind_map_attr,
+                  IndirectVectorLoadOp::getIndirectMapAttrName(result.name),
+                  result.attributes);
   if (op_result)
     return parser.emitError(parser.getNameLoc()) << "error parsing indirect";
 
-  op_result =
-      op_result || parser.parseKeyword("direct") || parser.parseColon() ||
-      parser.parseOperand(dir_memref_info) ||
-      parser.parseAffineMapOfSSAIds(
-          dir_map_operands, dir_map_attr,
-          IndirectVectorLoadOp::getDirectMapAttrStrName(), result.attributes);
+  op_result = op_result || parser.parseKeyword("direct") ||
+              parser.parseColon() || parser.parseOperand(dir_memref_info) ||
+              parser.parseAffineMapOfSSAIds(
+                  dir_map_operands, dir_map_attr,
+                  IndirectVectorLoadOp::getDirectMapAttrName(result.name),
+                  result.attributes);
   if (op_result)
     return parser.emitError(parser.getNameLoc()) << "error parsing direct";
 
@@ -2007,8 +2012,8 @@ ParseResult IndirectVectorLoadOp::parse(OpAsmParser& parser,
     op_result = op_result || parser.resolveOperand(multicast_info, index_type,
                                                    result.operands);
 
-  std::optional<NamedAttribute> load_set_attr =
-      result.attributes.getNamed(IndirectVectorLoadOp::getLoadSetAttrStrName());
+  std::optional<NamedAttribute> load_set_attr = result.attributes.getNamed(
+      IndirectVectorLoadOp::getLoadSetAttrName(result.name));
   if (!load_set_attr.has_value()) {
     return parser.emitError(parser.getNameLoc())
            << "load set is missing in the operation";
@@ -2021,7 +2026,7 @@ ParseResult IndirectVectorLoadOp::parse(OpAsmParser& parser,
            << "load set and direct array dimensions should match";
   }
   std::optional<NamedAttribute> load_order_attr = result.attributes.getNamed(
-      IndirectVectorLoadOp::getLoadOrderMapAttrStrName());
+      IndirectVectorLoadOp::getLoadOrderAttrName(result.name));
   if (load_order_attr.has_value()) {
     auto load_order =
         mlir::dyn_cast<AffineMapAttr>(load_order_attr->getValue()).getValue();
@@ -2040,14 +2045,12 @@ ParseResult IndirectVectorLoadOp::parse(OpAsmParser& parser,
 void IndirectVectorLoadOp::print(OpAsmPrinter& p) {
   auto& op = *this;
   p << " indirect:" << op.getIndirectMemref() << '[';
-  if (AffineMapAttr ind_map_attr =
-          op->getAttrOfType<AffineMapAttr>(op.getIndirectMapAttrStrName()))
+  if (AffineMapAttr ind_map_attr = getIndirectMapAttr(); ind_map_attr)
     p.printAffineMapOfSSAIds(ind_map_attr, op.getIndirectMapIndices());
   p << ']';
 
   p << " direct:" << op.getDirectMemref() << '[';
-  if (AffineMapAttr dir_map_attr =
-          op->getAttrOfType<AffineMapAttr>(op.getDirectMapAttrStrName()))
+  if (AffineMapAttr dir_map_attr = getDirectMapAttr(); dir_map_attr)
     p.printAffineMapOfSSAIds(dir_map_attr, op.getDirectMapIndices());
   p << ']';
 
@@ -2056,8 +2059,7 @@ void IndirectVectorLoadOp::print(OpAsmPrinter& p) {
   p.printNewline();
   p.printOptionalAttrDict(
       op->getAttrs(),
-      /*elidedAttrs=*/{op.getIndirectMapAttrStrName(),
-                       op.getDirectMapAttrStrName(),
+      /*elidedAttrs=*/{op.getIndirectMapAttrName(), op.getDirectMapAttrName(),
                        op.getOperandSegmentSizesAttrName()});
   p.printNewline();
   p << " : ";
@@ -2084,13 +2086,14 @@ void IndirectVectorLoadOp::build(
   result.addOperands(operands);
 
   if (dbgName) result.addAttribute(getDbgNameAttrName(result.name), dbgName);
-  result.addAttribute(getIndirectMapAttrStrName(),
+  result.addAttribute(getIndirectMapAttrName(result.name),
                       AffineMapAttr::get(indirect_map));
-  result.addAttribute(getDirectMapAttrStrName(),
+  result.addAttribute(getDirectMapAttrName(result.name),
                       AffineMapAttr::get(direct_map));
 
-  result.addAttribute(getLoadSetAttrStrName(), IntegerSetAttr::get(load_set));
-  result.addAttribute(getLoadOrderMapAttrStrName(),
+  result.addAttribute(getLoadSetAttrName(result.name),
+                      IntegerSetAttr::get(load_set));
+  result.addAttribute(getLoadOrderAttrName(result.name),
                       AffineMapAttr::get(load_order));
 
   result.addAttribute(
@@ -2130,17 +2133,17 @@ ParseResult IndirectVectorStoreOp::parse(OpAsmParser& parser,
               parser.parseColon() || parser.parseOperand(ind_memref_info) ||
               parser.parseAffineMapOfSSAIds(
                   ind_map_operands, ind_map_attr,
-                  IndirectVectorStoreOp::getIndirectMapAttrStrName(),
+                  IndirectVectorStoreOp::getIndirectMapAttrName(result.name),
                   result.attributes);
   if (op_result)
     return parser.emitError(parser.getNameLoc()) << "error parsing indirect";
 
-  op_result =
-      op_result || parser.parseKeyword("direct") || parser.parseColon() ||
-      parser.parseOperand(dir_memref_info) ||
-      parser.parseAffineMapOfSSAIds(
-          dir_map_operands, dir_map_attr,
-          IndirectVectorStoreOp::getDirectMapAttrStrName(), result.attributes);
+  op_result = op_result || parser.parseKeyword("direct") ||
+              parser.parseColon() || parser.parseOperand(dir_memref_info) ||
+              parser.parseAffineMapOfSSAIds(
+                  dir_map_operands, dir_map_attr,
+                  IndirectVectorStoreOp::getDirectMapAttrName(result.name),
+                  result.attributes);
   if (op_result)
     return parser.emitError(parser.getNameLoc()) << "error parsing direct";
 
@@ -2187,7 +2190,7 @@ ParseResult IndirectVectorStoreOp::parse(OpAsmParser& parser,
                                                    result.operands);
 
   std::optional<NamedAttribute> store_set_attr = result.attributes.getNamed(
-      IndirectVectorStoreOp::getStoreSetAttrStrName());
+      IndirectVectorStoreOp::getStoreSetAttrName(result.name));
   if (!store_set_attr.has_value()) {
     return parser.emitError(parser.getNameLoc())
            << "store set is missing in the operation";
@@ -2200,7 +2203,7 @@ ParseResult IndirectVectorStoreOp::parse(OpAsmParser& parser,
            << "store set and direct array dimensions should match";
   }
   std::optional<NamedAttribute> store_order_attr = result.attributes.getNamed(
-      IndirectVectorStoreOp::getStoreOrderMapAttrStrName());
+      IndirectVectorStoreOp::getStoreOrderAttrName(result.name));
   if (store_order_attr.has_value()) {
     auto store_order =
         mlir::dyn_cast<AffineMapAttr>(store_order_attr->getValue()).getValue();
@@ -2220,14 +2223,12 @@ void IndirectVectorStoreOp::print(OpAsmPrinter& p) {
   auto& op = *this;
   p << ' ' << op.getValue();
   p << " indirect:" << op.getIndirectMemref() << '[';
-  if (AffineMapAttr ind_map_attr =
-          op->getAttrOfType<AffineMapAttr>(op.getIndirectMapAttrStrName()))
+  if (AffineMapAttr ind_map_attr = getIndirectMapAttr(); ind_map_attr)
     p.printAffineMapOfSSAIds(ind_map_attr, op.getIndirectMapIndices());
   p << ']';
 
   p << " direct:" << op.getDirectMemref() << '[';
-  if (AffineMapAttr dir_map_attr =
-          op->getAttrOfType<AffineMapAttr>(op.getDirectMapAttrStrName()))
+  if (AffineMapAttr dir_map_attr = getDirectMapAttr(); dir_map_attr)
     p.printAffineMapOfSSAIds(dir_map_attr, op.getDirectMapIndices());
   p << ']';
 
@@ -2238,8 +2239,7 @@ void IndirectVectorStoreOp::print(OpAsmPrinter& p) {
   }
   p.printOptionalAttrDict(
       op->getAttrs(),
-      /*elidedAttrs=*/{op.getIndirectMapAttrStrName(),
-                       op.getDirectMapAttrStrName(),
+      /*elidedAttrs=*/{op.getIndirectMapAttrName(), op.getDirectMapAttrName(),
                        op.getOperandSegmentSizesAttrName()});
   p.printNewline();
   p << " : ";
@@ -2271,14 +2271,15 @@ void IndirectVectorStoreOp::build(
   result.addOperands(operands);
 
   if (dbgName) result.addAttribute(getDbgNameAttrName(result.name), dbgName);
-  result.addAttribute(getIndirectMapAttrStrName(),
+  result.addAttribute(getIndirectMapAttrName(result.name),
                       AffineMapAttr::get(indirect_map));
-  result.addAttribute(getDirectMapAttrStrName(),
+  result.addAttribute(getDirectMapAttrName(result.name),
                       AffineMapAttr::get(direct_map));
 
-  result.addAttribute(getStoreOrderMapAttrStrName(),
+  result.addAttribute(getStoreOrderAttrName(result.name),
                       AffineMapAttr::get(store_order));
-  result.addAttribute(getStoreSetAttrStrName(), IntegerSetAttr::get(store_set));
+  result.addAttribute(getStoreSetAttrName(result.name),
+                      IntegerSetAttr::get(store_set));
 
   result.addAttribute(
       IndirectVectorStoreOp::getOperandSegmentSizesAttrName(OperationName(
@@ -2339,11 +2340,11 @@ ParseResult SymbolicVectorLoadOp::parse(OpAsmParser& parser,
 
   IntegerAttr num_indices_attr = builder.getI32IntegerAttr(indices.size());
   result.attributes.push_back(builder.getNamedAttr(
-      SymbolicVectorLoadOp::getNumIndicesAttrStrName(), num_indices_attr));
+      SymbolicVectorLoadOp::getNumIndicesAttrName(result.name), num_indices_attr));
 
   IntegerAttr num_strides_attr = builder.getI32IntegerAttr(strides.size());
   result.attributes.push_back(builder.getNamedAttr(
-      SymbolicVectorLoadOp::getNumStridesAttrStrName(), num_strides_attr));
+      SymbolicVectorLoadOp::getNumStridesAttrName(result.name), num_strides_attr));
 
   return failure(op_result);
 }
@@ -2372,8 +2373,8 @@ void SymbolicVectorLoadOp::print(OpAsmPrinter& p) {
 
   p.printOptionalAttrDict(
       op->getAttrs(),
-      /*elidedAttrs*/ {op.getNumIndicesAttrStrName(),
-                       SymbolicVectorLoadOp::getNumStridesAttrStrName()});
+      /*elidedAttrs*/ {op.getNumIndicesAttrName(),
+                       SymbolicVectorLoadOp::getNumStridesAttrName()});
   p << " : " << op.getMemref().getType() << ", " << op.getType();
 }
 
@@ -2460,11 +2461,11 @@ ParseResult SymbolicVectorStoreOp::parse(OpAsmParser& parser,
 
   IntegerAttr num_indices_attr = builder.getI32IntegerAttr(indices.size());
   result.attributes.push_back(builder.getNamedAttr(
-      SymbolicVectorStoreOp::getNumIndicesAttrStrName(), num_indices_attr));
+      SymbolicVectorStoreOp::getNumIndicesAttrName(result.name), num_indices_attr));
 
   IntegerAttr num_strides_attr = builder.getI32IntegerAttr(strides.size());
   result.attributes.push_back(builder.getNamedAttr(
-      SymbolicVectorStoreOp::getNumStridesAttrStrName(), num_strides_attr));
+      SymbolicVectorStoreOp::getNumStridesAttrName(result.name), num_strides_attr));
 
   return failure(op_result);
 }
@@ -2495,8 +2496,8 @@ void SymbolicVectorStoreOp::print(OpAsmPrinter& p) {
 
   p.printOptionalAttrDict(
       op->getAttrs(),
-      /*elidedAttrs*/ {op.getNumIndicesAttrStrName(),
-                       SymbolicVectorStoreOp::getNumStridesAttrStrName()});
+      /*elidedAttrs*/ {op.getNumIndicesAttrName(),
+                       SymbolicVectorStoreOp::getNumStridesAttrName()});
   p << " : " << op.getMemref().getType() << ", "
     << op.getValueToStore().getType();
 }
@@ -2581,7 +2582,7 @@ void CompositeMemoryInterleaveOp::build(::mlir::OpBuilder& builder,
 
   if (dbgName) result.addAttribute(getDbgNameAttrName(result.name), dbgName);
   // Add granularity attribute
-  result.addAttribute(getGranularityAttrStrName(),
+  result.addAttribute(getGranularityAttrName(result.name),
                       builder.getI32IntegerAttr(granularity));
 
   // Add a body region with block arguments
@@ -2718,9 +2719,7 @@ void SetTransferMaskStateOp::print(OpAsmPrinter& p) {
   p << " mask_value(" << op.getMaskValue() << ") ";
 
   // Print the attributes
-  p << "{ num_slices = " << op.getNumSlices() << " : ";
-  p.printType(mlir::cast<IntegerAttr>(op->getAttr(getNumSlicesAttrStrName()))
-                  .getType());
+  p << "{ num_slices = " << op.getNumSlicesAttr();
   p << ", slice_mask_map = \"" << op.getSliceMaskMap() << "\"";
 
   // If the operation has masks defined, print them in a readable format.

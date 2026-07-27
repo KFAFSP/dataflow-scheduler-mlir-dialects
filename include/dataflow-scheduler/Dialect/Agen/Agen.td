@@ -81,7 +81,7 @@ def YieldOp : Agen_Op<"yield", [NoMemoryEffect, Terminator, ReturnLike,
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);
-  
+
   let builders = [
     OpBuilder<(ins), [{ build($_builder, $_state, ValueRange{}); }]>
   ];
@@ -130,11 +130,11 @@ def Agen_VectorLoadOp : Agen_Op<"vector_load", [
 
   let builders = [
     /// Builds an agen vector load op with the specified map and operands.
-    OpBuilder<(ins 
-        "VectorType":$resultType, "Value":$mem_ref, "StringAttr":$dbg_name, 
-        "AffineMap":$map, "ValueRange":$map_operands, "IntegerSet":$load_set, 
+    OpBuilder<(ins
+        "VectorType":$resultType, "Value":$mem_ref, "StringAttr":$dbg_name,
+        "AffineMap":$map, "ValueRange":$map_operands, "IntegerSet":$load_set,
         "AffineMap":$load_order, CArg<"Value", "{}">:$multicast_info), [{
-      build($_builder, $_state, resultType, mem_ref, dbg_name, map, map_operands, 
+      build($_builder, $_state, resultType, mem_ref, dbg_name, map, map_operands,
             IntegerSetAttr::get(load_set), load_order, multicast_info);
     }]>
   ];
@@ -146,18 +146,18 @@ def Agen_VectorLoadOp : Agen_Op<"vector_load", [
   }];
 
   let extraClassDeclaration =  [{
-    [[deprecated("use getResult().getType()")]] 
+    [[deprecated("use getResult().getType()")]]
     VectorType getVectorType() {
       return getResult().getType();
     }
 
     /// Returns the affine map for the agen vector load.
-    [[deprecated("use getLoadSetAttr()")]] 
+    [[deprecated("use getLoadSetAttr()")]]
     IntegerSetAttr getAffineLoadSetAttr() {
       return getLoadSetAttr();
     }
 
-    [[deprecated("use getMapOperands()")]] 
+    [[deprecated("use getMapOperands()")]]
     ::mlir::Operation::operand_range getMapIndices() {
       return getMapOperands();
     }
@@ -220,13 +220,13 @@ def Agen_VectorStoreOp : Agen_Op<"vector_store", [
     AffineMapAttr:$store_order);
 
   let builders = [
-    OpBuilder<(ins 
-        "Value":$value_to_store, "Value":$mem_ref, "StringAttr":$dbg_name, "AffineMap":$map, 
+    OpBuilder<(ins
+        "Value":$value_to_store, "Value":$mem_ref, "StringAttr":$dbg_name, "AffineMap":$map,
         "ValueRange":$map_operands, "IntegerSet":$store_set, "AffineMap":$store_order), [{
-      build($_builder, $_state, value_to_store, mem_ref, dbg_name, map, map_operands, 
+      build($_builder, $_state, value_to_store, mem_ref, dbg_name, map, map_operands,
             IntegerSetAttr::get(store_set), store_order);
     }]>,
-    OpBuilder<(ins 
+    OpBuilder<(ins
         "Value":$value_to_store, "Value":$mem_ref, "mlir::StringAttr":$dbg_name,
         "ValueRange":$indices, "IntegerSet":$store_set, "mlir::AffineMap":$store_order)>
   ];
@@ -316,7 +316,7 @@ def Agen_CompositeLoadAndStoreOp : Agen_Op<"composite_load_and_store", [
     } : memref<8x16xi8>, memref<8x16xi8>
     ```
   }];
-  let arguments = (ins 
+  let arguments = (ins
     Arg<AnyMemRef, "the reference to load from", [MemRead]>:$src_mem_ref,
     Arg<AnyMemRef, "the reference to store into", [MemWrite]>:$dst_mem_ref,
     OptionalAttr<StrAttr>:$dbg_name,
@@ -340,23 +340,23 @@ def Agen_CompositeLoadAndStoreOp : Agen_Op<"composite_load_and_store", [
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<(ins 
-        "Value":$src_mem_ref, "Value":$dst_mem_ref, "StringAttr":$dbg_name, 
-        "AffineMapAttr":$src_map, "ValueRange":$src_operands, "AffineMapAttr":$dst_map, 
-        "ValueRange":$dst_operands, "IntegerSetAttr":$load_set, "AffineMapAttr":$load_order,  
+    OpBuilder<(ins
+        "Value":$src_mem_ref, "Value":$dst_mem_ref, "StringAttr":$dbg_name,
+        "AffineMapAttr":$src_map, "ValueRange":$src_operands, "AffineMapAttr":$dst_map,
+        "ValueRange":$dst_operands, "IntegerSetAttr":$load_set, "AffineMapAttr":$load_order,
         "IntegerSetAttr":$store_set, "AffineMapAttr":$store_order, "ValueRange":$time_symbols,
-        "IntegerSetAttr":$time_set, "AffineMapAttr":$time_order, "AffineMapAttr":$load_time_addr_map, 
+        "IntegerSetAttr":$time_set, "AffineMapAttr":$time_order, "AffineMapAttr":$load_time_addr_map,
         "AffineMapAttr":$store_time_addr_map, "VectorType":$type,
         CArg<"AgenRoutingDirectionAttr", "nullptr">:$dir,
         CArg<"Value", "{}">:$multicast_info,
         CArg<"function_ref<void(OpBuilder &, Location, Value)>", "nullptr">:$body_builder)>,
     /// Builds a composite load_and_store op with the specified map and operands.
-    OpBuilder<(ins 
-        "Value":$src_mem_ref, "Value":$dst_mem_ref, "StringAttr":$dbg_name, 
-        "AffineMap":$src_map, "ValueRange":$src_operands, "AffineMap":$dst_map, 
-        "ValueRange":$dst_operands, "IntegerSet":$load_set, "AffineMap":$load_order,  
+    OpBuilder<(ins
+        "Value":$src_mem_ref, "Value":$dst_mem_ref, "StringAttr":$dbg_name,
+        "AffineMap":$src_map, "ValueRange":$src_operands, "AffineMap":$dst_map,
+        "ValueRange":$dst_operands, "IntegerSet":$load_set, "AffineMap":$load_order,
         "IntegerSet":$store_set, "AffineMap":$store_order, "ValueRange":$time_symbols,
-        "IntegerSet":$time_set, "AffineMap":$time_order, "AffineMap":$load_time_addr_map, 
+        "IntegerSet":$time_set, "AffineMap":$time_order, "AffineMap":$load_time_addr_map,
         "AffineMap":$store_time_addr_map, "VectorType":$type,
         CArg<"AgenRoutingDirectionAttr", "nullptr">:$dir,
         CArg<"Value", "{}">:$multicast_info,
@@ -473,12 +473,6 @@ def Agen_CompositeLoadOp:Agen_Op<"composite_load",
     }
 
     static StringRef getMapAttrStrName() { return "map"; }
-    static StringRef getLoadSetAttrStrName() { return "load_set"; }
-    static StringRef getLoadOrderMapAttrStrName() { return "load_order"; }
-    static StringRef getTimeSetAttrStrName() { return "time_set"; }
-    static StringRef getTimeOrderMapAttrStrName() { return "time_order"; }
-    static StringRef getTimeAddrMapAttrStrName() { return "time_addr_map"; }
-    static StringRef getNumMemrefIndicesAttrStrName() { return "num_memref_indices"; }
 
     Value getLoadInductionVar() { return getRegion().getBlocks().begin()->getArgument(0); }
 
@@ -518,7 +512,7 @@ def Agen_CompositeStoreOp:Agen_Op<"composite_store",
         Variadic<AnyType>:$operands1);
   let regions = (region AnyRegion:$region);
 
-  
+
   let skipDefaultBuilders = 1;
   let hasCustomAssemblyFormat = 1;
 
@@ -553,14 +547,7 @@ def Agen_CompositeStoreOp:Agen_Op<"composite_store",
     }
 
     static StringRef getMapAttrStrName() { return "map"; }
-    static StringRef getStoreSetAttrStrName() { return "store_set"; }
-    static StringRef getStoreOrderMapAttrStrName() { return "store_order"; }
-    static StringRef getTimeSetAttrStrName() { return "time_set"; }
-    static StringRef getTimeOrderMapAttrStrName() { return "time_order"; }
-    static StringRef getTimeAddrMapAttrStrName() { return "time_addr_map"; }
-    static StringRef getNumMemrefIndicesAttrStrName() { return "num_memref_indices"; }
-    static StringRef getHaveInputVectorAttrStrName() { return "have_input_vector"; }
-    
+
     ::mlir::Operation::operand_range getMapIndices() {
       return getOperands1().slice(0, getNumMemrefIndices());
     }
@@ -614,10 +601,10 @@ def Agen_CompositeIndirectLoadAndStoreOp:Agen_Op<"composite_indirect_load_and_st
   let summary = "agen composite indirect load_and_store operation";
   let description = [{
     composite_indirect_load_and_store operations are used for [indirectly] loading from one memory
-    address and [indirectly] storing into another as part of each time step. 
+    address and [indirectly] storing into another as part of each time step.
     All of the indirect access functions are optional.
   }];
-  let arguments = (ins 
+  let arguments = (ins
         Optional<AnyMemRef>:$indirect_src_memref,
         AnyMemRef:$direct_src_memref,
         Optional<AnyMemRef>:$indirect_dst_memref,
@@ -652,13 +639,13 @@ def Agen_CompositeIndirectLoadAndStoreOp:Agen_Op<"composite_indirect_load_and_st
   let builders = [
     /// Builds a composite indirect load_and_store op with the specified map and operands.
     /// The $operands argument is the list of operands corresponding to $indirect_src_map_indices, $direct_src_map_indices,$indirect_dst_map_indices, $direct_dst_map_indices, $multicast_info, and $time_symbols in that order.
-    /// Since some operands are optional and/or variadic, the number of SSA values in each segment of the operand list is passed to the builder as argument (eg. see $num_ind_src_memref_indices, etc). 
+    /// Since some operands are optional and/or variadic, the number of SSA values in each segment of the operand list is passed to the builder as argument (eg. see $num_ind_src_memref_indices, etc).
     OpBuilder<(ins "Value":$indirect_src_memref, "Value":$direct_src_memref, "Value":$indirect_dst_memref, "Value":$direct_dst_memref, "mlir::StringAttr":$dbgName,
       "mlir::AffineMap":$indirect_src_map, "mlir::AffineMap":$direct_src_map, "mlir::AffineMap":$indirect_dst_map, "mlir::AffineMap":$direct_dst_map, "ValueRange":$operands,
       "Type":$type, "IntegerSet":$load_set, "mlir::AffineMap":$load_order,  "IntegerSet":$store_set, "mlir::AffineMap":$store_order,
-      "IntegerSet":$time_set, "mlir::AffineMap":$time_order, "mlir::AffineMap":$indirect_load_time_addr_map, "mlir::AffineMap":$direct_load_time_addr_map, 
+      "IntegerSet":$time_set, "mlir::AffineMap":$time_order, "mlir::AffineMap":$indirect_load_time_addr_map, "mlir::AffineMap":$direct_load_time_addr_map,
       "mlir::AffineMap":$indirect_store_time_addr_map, "mlir::AffineMap":$direct_store_time_addr_map,
-      "uint32_t":$num_ind_src_memref_indices, "uint32_t":$num_dir_src_memref_indices, "uint32_t":$num_ind_dst_memref_indices, "uint32_t":$num_dir_dst_memref_indices, 
+      "uint32_t":$num_ind_src_memref_indices, "uint32_t":$num_dir_src_memref_indices, "uint32_t":$num_ind_dst_memref_indices, "uint32_t":$num_dir_dst_memref_indices,
       "uint32_t":$num_multicast_info, "uint32_t":$num_time_symbols,
       CArg<"function_ref<void(OpBuilder &, Location, Value, ValueRange)>",
            "nullptr">:$bodyBuilder)>
@@ -676,34 +663,23 @@ def Agen_CompositeIndirectLoadAndStoreOp:Agen_Op<"composite_indirect_load_and_st
     IndexType getMulticastInfoType() { return mlir::cast<IndexType>(getMulticastInfo().getType()); }
 
     // Returns the affine map used to index the src/dst memref for this operation.
+    [[deprecated("use getIndirectSrcMapAttr()")]]
     AffineMapAttr getIndirectSrcAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getIndirectSrcMapAttrStrName()));
+      return getIndirectSrcMapAttr();
     }
+    [[deprecated("use getDirectSrcMapAttr()")]]
     AffineMapAttr getDirectSrcAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getDirectSrcMapAttrStrName()));
+      return getDirectSrcMapAttr();
     }
+    [[deprecated("use getIndirectDstMapAttr()")]]
     AffineMapAttr getIndirectDstAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getIndirectDstMapAttrStrName()));
+      return getIndirectDstMapAttr();
     }
+    [[deprecated("use getDirectDstMapAttr()")]]
     AffineMapAttr getDirectDstAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getDirectDstMapAttrStrName()));
+      return getDirectDstMapAttr();
     }
 
-    static StringRef getIndirectSrcMapAttrStrName() { return "ind_src_map"; }
-    static StringRef getDirectSrcMapAttrStrName() { return "dir_src_map"; }
-    static StringRef getIndirectDstMapAttrStrName() { return "ind_dst_map"; }
-    static StringRef getDirectDstMapAttrStrName() { return "dir_dst_map"; }
-    static StringRef getLoadSetAttrStrName() { return "load_set"; }
-    static StringRef getLoadOrderMapAttrStrName() { return "load_order"; }
-    static StringRef getStoreSetAttrStrName() { return "store_set"; }
-    static StringRef getStoreOrderMapAttrStrName() { return "store_order"; }
-    static StringRef getTimeSetAttrStrName() { return "time_set"; }
-    static StringRef getTimeOrderMapAttrStrName() { return "time_order"; }
-    static StringRef getLoadIndirectTimeAddrMapAttrStrName() { return "load_indirect_time_addr_map"; }
-    static StringRef getLoadDirectTimeAddrMapAttrStrName() { return "load_direct_time_addr_map"; }
-    static StringRef getStoreIndirectTimeAddrMapAttrStrName() { return "store_indirect_time_addr_map"; }
-    static StringRef getStoreDirectTimeAddrMapAttrStrName() { return "store_direct_time_addr_map"; }
-    
     Value getLoadInductionVar() { return getRegion().getBlocks().begin()->getArgument(0); }
     Type getLoadInductionVarType() { return getRegion().getBlocks().begin()->getArgumentTypes()[0]; }
 
@@ -745,7 +721,7 @@ def Agen_CompositeIndirectLoadOp:Agen_Op<"composite_indirect_load",
     composite_indirect_load operations are used for [indirectly] loading from a memory
     address as part of each time step.
   }];
-  let arguments = (ins 
+  let arguments = (ins
         AnyMemRef:$indirect_memref,
         AnyMemRef:$direct_memref,
         Variadic<Index>:$indirect_map_indices,
@@ -769,7 +745,7 @@ def Agen_CompositeIndirectLoadOp:Agen_Op<"composite_indirect_load",
   let builders = [
     /// Builds a composite indirect load op with the specified map and operands.
     /// The $operands argument is the list of operands corresponding to $indirect_map_indices, $direct_map_indices, $multicast_info, and $time_symbols in that order.
-    /// Since some operands are optional and/or variadic, the number of SSA values in each segment of the operand list is passed to the builder as argument (eg. see $num_ind_memref_indices, etc). 
+    /// Since some operands are optional and/or variadic, the number of SSA values in each segment of the operand list is passed to the builder as argument (eg. see $num_ind_memref_indices, etc).
     OpBuilder<(ins "Value":$indirect_memref, "Value":$direct_memref, "mlir::StringAttr":$dbgName,
       "mlir::AffineMap":$indirect_map, "mlir::AffineMap":$direct_map, "ValueRange":$operands,
       "Type":$type, "IntegerSet":$load_set, "mlir::AffineMap":$load_order,
@@ -790,21 +766,15 @@ def Agen_CompositeIndirectLoadOp:Agen_Op<"composite_indirect_load",
     IndexType getMulticastInfoType() { return mlir::cast<IndexType>(getMulticastInfo().getType()); }
 
     // Returns the affine map used to index the src memref for this operation.
+    [[deprecated("use getIndirectMapAttr()")]]
     AffineMapAttr getIndirectAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getIndirectMapAttrStrName()));
+      return getIndirectMapAttr();
     }
+    [[deprecated("use getDirectMapAttr()")]]
     AffineMapAttr getDirectAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getDirectMapAttrStrName()));
+      return getDirectMapAttr();
     }
 
-    static StringRef getIndirectMapAttrStrName() { return "indirect_map"; }
-    static StringRef getDirectMapAttrStrName() { return "direct_map"; }
-    static StringRef getLoadSetAttrStrName() { return "load_set"; }
-    static StringRef getLoadOrderMapAttrStrName() { return "load_order"; }
-    static StringRef getTimeSetAttrStrName() { return "time_set"; }
-    static StringRef getTimeOrderMapAttrStrName() { return "time_order"; }
-    static StringRef getTimeAddrMapAttrStrName() { return "time_addr_map"; }
-    
     Value getLoadInductionVar() { return getRegion().getBlocks().begin()->getArgument(0); }
     Type getLoadInductionVarType() { return getRegion().getBlocks().begin()->getArgumentTypes()[0]; }
 
@@ -832,7 +802,7 @@ def Agen_CompositeIndirectStoreOp:Agen_Op<"composite_indirect_store",
     address as part of each time step.
   }];
   let arguments = (ins
-        
+
         AnyMemRef:$indirect_memref,
         AnyMemRef:$direct_memref,
         Variadic<Index>:$indirect_map_indices,
@@ -856,7 +826,7 @@ def Agen_CompositeIndirectStoreOp:Agen_Op<"composite_indirect_store",
   let builders = [
     /// Builds a composite indirect store op with the specified map and operands.
     /// The $operands argument is the list of operands corresponding to $indirect_map_indices, $direct_map_indices, $multicast_info, and $time_symbols in that order.
-    /// Since some operands are optional and/or variadic, the number of SSA values in each segment of the operand list is passed to the builder as argument (eg. see $num_ind_memref_indices, etc). 
+    /// Since some operands are optional and/or variadic, the number of SSA values in each segment of the operand list is passed to the builder as argument (eg. see $num_ind_memref_indices, etc).
     OpBuilder<(ins "Value":$indirect_memref, "Value":$direct_memref, "mlir::StringAttr":$dbgName,
       "mlir::AffineMap":$indirect_map, "mlir::AffineMap":$direct_map, "ValueRange":$operands,
       "Type":$type, "IntegerSet":$store_set, "mlir::AffineMap":$store_order,
@@ -878,20 +848,14 @@ def Agen_CompositeIndirectStoreOp:Agen_Op<"composite_indirect_store",
     IndexType getMulticastInfoType() { return mlir::cast<IndexType>(getMulticastInfo().getType()); }
 
     // Returns the affine map used to index the memref for this operation.
+    [[deprecated("use getIndirectMapAttr()")]]
     AffineMapAttr getIndirectAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getIndirectMapAttrStrName()));
+      return getIndirectMapAttr();
     }
+    [[deprecated("use getDirectMapAttr()")]]
     AffineMapAttr getDirectAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getDirectMapAttrStrName()));
+      return getDirectMapAttr();
     }
-
-    static StringRef getIndirectMapAttrStrName() { return "indirect_map"; }
-    static StringRef getDirectMapAttrStrName() { return "direct_map"; }
-    static StringRef getStoreSetAttrStrName() { return "store_set"; }
-    static StringRef getStoreOrderMapAttrStrName() { return "store_order"; }
-    static StringRef getTimeSetAttrStrName() { return "time_set"; }
-    static StringRef getTimeOrderMapAttrStrName() { return "time_order"; }
-    static StringRef getTimeAddrMapAttrStrName() { return "time_addr_map"; }
 
     bool hasMulticastInfo() {
       return static_cast<bool>(getMulticastInfo());
@@ -938,7 +902,7 @@ def Agen_IndirectVectorLoadOp:Agen_Op<"indirect_vector_load",
     /// The $operands argument is the list of operands corresponding to $indirect_map_indices, $direct_map_indices, $multicast_info
     /// in that order.
     /// Since some operands are optional and/or variadic, the number of SSA values in each segment of the operand list is passed to
-    /// the builder as argument (eg. see $num_ind_memref_indices, etc). 
+    /// the builder as argument (eg. see $num_ind_memref_indices, etc).
     OpBuilder<(ins "Type":$resultType, "Value":$indirect_memref, "Value":$direct_memref, "mlir::StringAttr":$dbgName,
       "mlir::AffineMap":$indirect_map, "mlir::AffineMap":$direct_map,
       "ValueRange":$operands, "Type":$type, "IntegerSet":$load_set, "mlir::AffineMap":$load_order,
@@ -956,17 +920,14 @@ def Agen_IndirectVectorLoadOp:Agen_Op<"indirect_vector_load",
     IndexType getMulticastInfoType() { return mlir::cast<IndexType>(getMulticastInfo().getType()); }
 
     // Returns the affine map used to index the memref for this operation.
+    [[deprecated("use getIndirectMapAttr()")]]
     AffineMapAttr getIndirectAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getIndirectMapAttrStrName()));
+      return getIndirectMapAttr();
     }
+    [[deprecated("use getDirectMapAttr()")]]
     AffineMapAttr getDirectAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getDirectMapAttrStrName()));
+      return getDirectMapAttr();
     }
-
-    static StringRef getIndirectMapAttrStrName() { return "indirect_map"; }
-    static StringRef getDirectMapAttrStrName() { return "direct_map"; }
-    static StringRef getLoadSetAttrStrName() { return "load_set"; }
-    static StringRef getLoadOrderMapAttrStrName() { return "load_order"; }
 
     bool hasMulticastInfo() {
       return static_cast<bool>(getMulticastInfo());
@@ -1013,7 +974,7 @@ def Agen_IndirectVectorStoreOp:Agen_Op<"indirect_vector_store",
     /// The $operands argument is the list of operands corresponding to $indirect_map_indices, $direct_map_indices, $multicast_info
     /// in that order.
     /// Since some operands are optional and/or variadic, the number of SSA values in each segment of the operand list is passed to
-    /// the builder as argument (eg. see $num_ind_src_memref_indices, etc). 
+    /// the builder as argument (eg. see $num_ind_src_memref_indices, etc).
     OpBuilder<(ins "Value":$value, "Value":$indirect_memref, "Value":$direct_memref, "mlir::StringAttr":$dbgName, "mlir::AffineMap":$indirect_map,
        "mlir::AffineMap":$direct_map, "ValueRange":$operands, "Type":$type, "IntegerSet":$store_set, "mlir::AffineMap":$store_order,
       "uint32_t":$num_ind_memref_indices, "uint32_t":$num_dir_memref_indices, "uint32_t":$num_multicast_info)>
@@ -1029,17 +990,14 @@ def Agen_IndirectVectorStoreOp:Agen_Op<"indirect_vector_store",
     IndexType getMulticastInfoType() { return mlir::cast<IndexType>(getMulticastInfo().getType()); }
 
     // Returns the affine map used to index the memref for this operation.
+    [[deprecated("use getIndirectMapAttr()")]]
     AffineMapAttr getIndirectAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getIndirectMapAttrStrName()));
+      return getIndirectMapAttr();
     }
+    [[deprecated("use getDirectMapAttr()")]]
     AffineMapAttr getDirectAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getDirectMapAttrStrName()));
+      return getDirectMapAttr();
     }
-
-    static StringRef getIndirectMapAttrStrName() { return "indirect_map"; }
-    static StringRef getDirectMapAttrStrName() { return "direct_map"; }
-    static StringRef getStoreSetAttrStrName() { return "store_set"; }
-    static StringRef getStoreOrderMapAttrStrName() { return "store_order"; }
 
     bool hasMulticastInfo() {
       return static_cast<bool>(getMulticastInfo());
@@ -1055,7 +1013,7 @@ def Agen_CompositeMemoryInterleaveOp:Agen_Op<"composite_memory_interleave",
     operations contained in its region in bursts specified by the granularity
     attribute. If no granularity is specified, granularity is assumed to be the
     maximum burst amount supported by the hardware.
-    
+
     For example:
     agen.composite_memory_interleave [granularity = 64] {
       composite memory operation A {burst = 80}
@@ -1104,10 +1062,6 @@ def Agen_CompositeMemoryInterleaveOp:Agen_Op<"composite_memory_interleave",
     // Builds the CompositeMemoryInterleaveOp with no granularity attribute.
     OpBuilder<(ins "mlir::StringAttr":$dbgName)>
   ];
-
-  let extraClassDeclaration =  [{
-    static StringRef getGranularityAttrStrName() { return "granularity"; }
-  }];
 }
 
 def Agen_SetTransferMaskStateOp:Agen_Op<"set_transfer_mask_state", [MemoryEffects<[MemWrite]>]> {
@@ -1132,7 +1086,7 @@ def Agen_SetTransferMaskStateOp:Agen_Op<"set_transfer_mask_state", [MemoryEffect
 
                     Current support for combinations of masks include:
                       OR operation: (A|B)
-                    
+
                     Example: (0)(0)(A|B)(A)(B)(1) describes a mask containing
                              6 slices. The first two slices will have no masking.
                              The third slice will be masked by a mask pattern
@@ -1140,17 +1094,17 @@ def Agen_SetTransferMaskStateOp:Agen_Op<"set_transfer_mask_state", [MemoryEffect
                              will be masked by mask A. The fifth slice will be
                              masked by a mask B. The sixth slice will be fully
                              masked.
-    
+
     *num_unmasked_elements: Number of consecutive unmasked elements in the mask
                             pattern. If multiple masks are involved, the number of
                             consecutive unmasked elements for each mask is provided
                             in an ordered list.
-    
+
     *num_masked_elements*: Number of consecutive masked elements in the mask pattern.
                            If multiple masks are involved, the number of consecutive
                            masked elements for each mask is provided in an ordered
                            list.
-    
+
     * If a mask is shorter than the number of elements in a slice, it is repeated to
       fill the slice. The sum of num_unmasked_elements and num_masked elements at a
       given index must evenly divide into the number of elements in a slice.
@@ -1178,8 +1132,6 @@ def Agen_SetTransferMaskStateOp:Agen_Op<"set_transfer_mask_state", [MemoryEffect
   let extraClassDeclaration =  [{
     IndexType getMaskValueType() { return mlir::cast<IndexType>(getMaskValue().getType()); }
 
-    static StringRef getNumSlicesAttrStrName() { return "num_slices"; }
-    static StringRef getSliceMaskMapAttrStrName() { return "slice_mask_map"; }
     static StringRef getMaskPrefixAttrStrName() { return "mask"; }
 
     bool isUnmask();
@@ -1219,14 +1171,10 @@ def Agen_SymbolicVectorLoadOp:Agen_Op<"symbolic_vector_load",
     void setMemref(Value value) { setOperand(getMemrefOperandIndex(), value); }
 
     /// Returns the affine map for the agen vector load.
+    [[deprecated("use getLoadSetAttr()")]]
     IntegerSetAttr getAffineLoadSetAttr() {
-      return mlir::cast<IntegerSetAttr>((*this)->getAttr(getLoadSetAttrStrName()));
+      return getLoadSetAttr();
     }
-
-    static StringRef getLoadSetAttrStrName() { return "load_set"; }
-    static StringRef getLoadOrderMapAttrStrName() { return "load_order"; }
-    static StringRef getNumIndicesAttrStrName() { return "num_indices"; }
-    static StringRef getNumStridesAttrStrName() { return "num_strides"; }
 
     ::mlir::Operation::operand_range getIndices() {
       return getOperands1().slice(0, getNumIndices());
@@ -1287,14 +1235,10 @@ def Agen_SymbolicVectorStoreOp : Agen_Op<"symbolic_vector_store",
     void setMemref(Value value) { setOperand(getMemrefOperandIndex(), value); }
 
     /// Returns the affine map for then agen vector store.
+    [[deprecated("use getStoreSetAttr()")]]
     IntegerSetAttr getAffineStoreSetAttr() {
-        return mlir::cast<IntegerSetAttr>((*this)->getAttr(getStoreSetAttrStrName()));
+        return getStoreSetAttr();
     }
-
-    static StringRef getStoreSetAttrStrName() { return "store_set"; }
-    static StringRef getStoreOrderMapAttrStrName() { return "store_order"; }
-    static StringRef getNumIndicesAttrStrName() { return "num_indices"; }
-    static StringRef getNumStridesAttrStrName() { return "num_strides"; }
 
     ::mlir::Operation::operand_range getIndices() {
       return getOperands1().slice(0, getNumIndices());
