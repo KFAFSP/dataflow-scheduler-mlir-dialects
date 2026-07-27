@@ -430,8 +430,9 @@ def Agen_CompositeLoadOp:Agen_Op<"composite_load",
 
   let summary = "agen composite load operation";
   let arguments = (ins Arg<AnyMemRef, "the reference to load from",
-        [MemRead]>:$memref,
+        [MemRead]>:$mem_ref,
         OptionalAttr<StrAttr>:$dbgName,
+        AffineMapAttr:$affine_map,
         Builtin_IntegerSetAttr:$load_set,
         AffineMapAttr:$load_order,
         Builtin_IntegerSetAttr:$time_set,
@@ -458,25 +459,15 @@ def Agen_CompositeLoadOp:Agen_Op<"composite_load",
     using BodyBuilderFn =
         function_ref<void(OpBuilder &, Location, Value, ValueRange)>;
 
-    // Returns the operand index of the memref.
-    unsigned getMemRefOperandIndex() { return 0; }
-
-    // Returns the memref ssa.
-    Value getMemRef() {return getMemref(); }
-
     // Returns the memref value type.
-    MemRefType getMemRefType() {return mlir::cast<MemRefType>(getMemRef().getType()); }
+    [[deprecated("use getMemRef().getType()")]]
+    MemRefType getMemRefType() { return getMemRef().getType(); }
 
-    // Returns the affine map used to index the memref for this operation.
-    AffineMapAttr getAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getMapAttrStrName()));
+    [[nodiscard]] auto getLoadInductionVar() -> Value {
+        return getRegion().getBlocks().begin()->getArgument(0);
     }
-
-    static StringRef getMapAttrStrName() { return "map"; }
-
-    Value getLoadInductionVar() { return getRegion().getBlocks().begin()->getArgument(0); }
-
-    Type getLoadInductionVarType() { return getRegion().getBlocks().begin()->getArgumentTypes()[0]; }
+    [[deprecated("use getLoadInductionVar().getType()")]]
+    Type getLoadInductionVarType() { return getLoadInductionVar().getType(); }
 
     ::mlir::Operation::operand_range getMapIndices() {
       return getOperands1().slice(0, getNumMemrefIndices());
@@ -490,6 +481,14 @@ def Agen_CompositeLoadOp:Agen_Op<"composite_load",
     CompositeLoadOp cloneWithNewAccessInfo(OpBuilder &builder,
         const Value &mem_view, const AffineMap &subscripts_map,
         const SmallVectorImpl<Value> &indices, const IntegerSet &time_set);
+
+    //===------------------------------------------------------------------===//
+    // AffineMapAccessInterface
+    //===------------------------------------------------------------------===//
+
+    [[nodiscard]] auto getMapAttrStrName() -> StringRef {
+      return getAffineMapAttrName();
+    }
   }];
 }
 
@@ -500,8 +499,9 @@ def Agen_CompositeStoreOp:Agen_Op<"composite_store",
 
   let summary = "agen composite store operation";
   let arguments = (ins Arg<AnyMemRef, "the reference to store to",
-        [MemWrite]>:$memref,
+        [MemWrite]>:$mem_ref,
         OptionalAttr<StrAttr>:$dbgName,
+        AffineMapAttr:$affine_map,
         OptionalAttr<Builtin_IntegerSetAttr>:$store_set,
         OptionalAttr<AffineMapAttr>:$store_order,
         Builtin_IntegerSetAttr:$time_set,
@@ -532,21 +532,9 @@ def Agen_CompositeStoreOp:Agen_Op<"composite_store",
     using BodyBuilderFn =
         function_ref<void(OpBuilder &, Location, Value, ValueRange)>;
 
-    // Returns the operand index of the memref.
-    unsigned getMemRefOperandIndex() { return 0; }
-
-    // Returns the memref ssa.
-    Value getMemRef() {return getMemref(); }
-
     // Returns the memref value type.
-    MemRefType getMemRefType() {return mlir::cast<MemRefType>(getMemRef().getType()); }
-
-    // Returns the affine map used to index the memref for this operation.
-    AffineMapAttr getAffineMapAttr() {
-      return mlir::cast<AffineMapAttr>((*this)->getAttr(getMapAttrStrName()));
-    }
-
-    static StringRef getMapAttrStrName() { return "map"; }
+    [[deprecated("use getMemRef().getType()")]]
+    MemRefType getMemRefType() { return getMemRef().getType(); }
 
     ::mlir::Operation::operand_range getMapIndices() {
       return getOperands1().slice(0, getNumMemrefIndices());
@@ -583,6 +571,14 @@ def Agen_CompositeStoreOp:Agen_Op<"composite_store",
     CompositeStoreOp cloneWithNewAccessInfo(OpBuilder &builder,
         const Value &mem_view, AffineMap &subscripts_map,
         const SmallVectorImpl<Value> &indices, const IntegerSet &time_set);
+
+    //===------------------------------------------------------------------===//
+    // AffineMapAccessInterface
+    //===------------------------------------------------------------------===//
+
+    [[nodiscard]] auto getMapAttrStrName() -> StringRef {
+      return getAffineMapAttrName();
+    }
   }];
 }
 

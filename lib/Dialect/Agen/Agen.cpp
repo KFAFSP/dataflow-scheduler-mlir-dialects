@@ -495,12 +495,12 @@ ParseResult CompositeLoadOp::parse(OpAsmParser& parser,
                                    OperationState& result) {
   auto& builder = parser.getBuilder();
   auto index_type = builder.getIndexType();
+  auto& props = result.getOrAddProperties<Properties>();
 
   MemRefType memref_type;
   Type inductionVar_type;
   OpAsmParser::UnresolvedOperand memref_info;
   OpAsmParser::Argument inductionVariable;
-  AffineMapAttr map_attr;
   SmallVector<OpAsmParser::UnresolvedOperand, 1> map_operands;
   SmallVector<OpAsmParser::UnresolvedOperand, 1> time_symbols_operands;
   // Parse region arguments.
@@ -510,9 +510,7 @@ ParseResult CompositeLoadOp::parse(OpAsmParser& parser,
 
   auto op_result =
       parser.parseOperand(memref_info) ||
-      parser.parseAffineMapOfSSAIds(map_operands, map_attr,
-                                    CompositeLoadOp::getMapAttrStrName(),
-                                    result.attributes) ||
+      parseAffineMapOfSSAIds(parser, props.affine_map, map_operands) ||
       parser.parseKeyword("time_symbols") ||
       parser.parseOperandList(time_symbols_operands,
                               OpAsmParser::Delimiter::Paren) ||
@@ -533,11 +531,7 @@ ParseResult CompositeLoadOp::parse(OpAsmParser& parser,
       parser.resolveOperands(time_symbols_operands, index_type,
                              result.operands);
 
-  IntegerAttr num_memref_indices_attr =
-      builder.getI32IntegerAttr(map_operands.size());
-  result.attributes.push_back(builder.getNamedAttr(
-      CompositeLoadOp::getNumMemrefIndicesAttrName(result.name),
-      num_memref_indices_attr));
+  props.num_memref_indices = builder.getI32IntegerAttr(map_operands.size());
 
   std::optional<NamedAttribute> load_set_attr = result.attributes.getNamed(
       CompositeLoadOp::getLoadSetAttrName(result.name));
@@ -550,7 +544,7 @@ ParseResult CompositeLoadOp::parse(OpAsmParser& parser,
       mlir::dyn_cast<IntegerSetAttr>(load_set_attr->getValue()).getValue();
 
   // TODO: enhance this with finding constant values and make sure they match.
-  if (load_set.getNumDims() < map_attr.getValue().getNumResults()) {
+  if (load_set.getNumDims() < props.affine_map.getValue().getNumResults()) {
     return parser.emitError(parser.getNameLoc())
            << "Load set and Array dimensions should match";
   }
@@ -602,6 +596,8 @@ void CompositeLoadOp::build(OpBuilder& builder, OperationState& result,
                             AffineMap time_addr_map,
                             uint32_t num_memref_indices,
                             CompositeLoadOp::BodyBuilderFn bodyBuilder) {
+  auto& props = result.getOrAddProperties<Properties>();
+
   // Checks
   assert((load_set.getNumDims() == load_order.getNumDims()) &&
          "The number of inputs in load set should match with number of "
@@ -621,20 +617,16 @@ void CompositeLoadOp::build(OpBuilder& builder, OperationState& result,
 
   result.addOperands(memref);
   result.addOperands(operands);
-  if (dbgName) result.addAttribute(getDbgNameAttrName(result.name), dbgName);
-  result.addAttribute(getLoadSetAttrName(result.name),
-                      IntegerSetAttr::get(load_set));
-  result.addAttribute(getMapAttrStrName(), AffineMapAttr::get(map));
-  result.addAttribute(getLoadOrderAttrName(result.name),
-                      AffineMapAttr::get(load_order));
-  result.addAttribute(getTimeSetAttrName(result.name),
-                      IntegerSetAttr::get(time_set));
-  result.addAttribute(getTimeOrderAttrName(result.name),
-                      AffineMapAttr::get(time_order));
-  result.addAttribute(getTimeAddrMapAttrName(result.name),
-                      AffineMapAttr::get(time_addr_map));
-  result.addAttribute(getNumMemrefIndicesAttrName(result.name),
-                      builder.getI32IntegerAttr(num_memref_indices));
+
+  props.dbgName = dbgName;
+  props.load_set = IntegerSetAttr::get(load_set);
+  props.affine_map = AffineMapAttr::get(map);
+  props.load_order = AffineMapAttr::get(load_order);
+  props.time_set = IntegerSetAttr::get(time_set);
+  props.time_order = AffineMapAttr::get(time_order);
+  props.time_addr_map = AffineMapAttr::get(time_addr_map);
+  props.num_memref_indices = builder.getI32IntegerAttr(num_memref_indices);
+
   // Add a body region with block arguments
   Region* bodyRegion = result.addRegion();
   bodyRegion->push_back(new Block);
@@ -695,12 +687,12 @@ ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
                                     OperationState& result) {
   auto& builder = parser.getBuilder();
   auto index_type = builder.getIndexType();
+  auto& props = result.getOrAddProperties<Properties>();
 
   MemRefType memref_type;
   Type input_vector_type;
   OpAsmParser::UnresolvedOperand memref_info, input_vector;
   bool getHaveInputVector = false;
-  AffineMapAttr map_attr;
   SmallVector<OpAsmParser::UnresolvedOperand, 1> map_operands;
   SmallVector<OpAsmParser::UnresolvedOperand, 1> time_symbols_operands;
   // Parse region arguments.
@@ -709,10 +701,9 @@ ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
   Region* body = result.addRegion();
 
   // parse memref
-  auto op_result = parser.parseOperand(memref_info) ||
-                   parser.parseAffineMapOfSSAIds(
-                       map_operands, map_attr,
-                       CompositeLoadOp::getMapAttrStrName(), result.attributes);
+  auto op_result =
+      parser.parseOperand(memref_info) ||
+      parseAffineMapOfSSAIds(parser, props.affine_map, map_operands);
   // parse optional input vector for coalesce store
   if (succeeded(parser.parseOptionalKeyword("input_vector"))) {
     op_result =
@@ -736,9 +727,7 @@ ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
              << "for composite_store, input_vector and region can't co-exist";
     }
     op_result = op_result || region_parse_result.value();
-    result.addAttribute(
-        CompositeStoreOp::getHaveInputVectorAttrName(result.name),
-        builder.getBoolAttr(false));
+    props.have_input_vector = builder.getBoolAttr(false);
   }
   CompositeStoreOp::ensureTerminator(*body, builder, result.location);
   // parse memref type
@@ -762,17 +751,13 @@ ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
   op_result = op_result || parser.resolveOperands(time_symbols_operands,
                                                   index_type, result.operands);
 
-  IntegerAttr num_memref_indices_attr =
-      builder.getI32IntegerAttr(map_operands.size());
-  result.attributes.push_back(builder.getNamedAttr(
-      CompositeLoadOp::getNumMemrefIndicesAttrName(result.name),
-      num_memref_indices_attr));
+  props.num_memref_indices = builder.getI32IntegerAttr(map_operands.size());
 
   // make sure getHaveInputVector attribute exists
   std::optional<NamedAttribute> getHaveInputVector_attr =
       result.attributes.getNamed(
           CompositeStoreOp::getHaveInputVectorAttrName(result.name));
-  if (!getHaveInputVector_attr.has_value()) {
+  if (!getHaveInputVector_attr.has_value() && !props.have_input_vector) {
     return parser.emitError(parser.getNameLoc())
            << "composite store requires getHaveInputVector attribute";
   }
@@ -792,7 +777,7 @@ ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
     auto store_set =
         mlir::dyn_cast<IntegerSetAttr>(store_set_attr->getValue()).getValue();
     // TODO: enhance this with finding constant values and make sure they match.
-    if (store_set.getNumDims() < map_attr.getValue().getNumResults()) {
+    if (store_set.getNumDims() < props.affine_map.getValue().getNumResults()) {
       return parser.emitError(parser.getNameLoc())
              << "Store set and Array dimensions should match";
     }
@@ -806,11 +791,9 @@ ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
   } else {
     // for coalesce store, store_order attr is not allowed from users. so set
     // store_order to Identity map
-    auto num_of_layout_dims = map_attr.getValue().getResults().size();
-    auto store_order_map = AffineMap::getMultiDimIdentityMap(
-        num_of_layout_dims, builder.getContext());
-    result.addAttribute(CompositeStoreOp::getStoreOrderAttrName(result.name),
-                        AffineMapAttr::get(store_order_map));
+    auto num_of_layout_dims = props.affine_map.getValue().getResults().size();
+    props.store_order = AffineMapAttr::get(AffineMap::getMultiDimIdentityMap(
+        num_of_layout_dims, builder.getContext()));
   }
 
   return failure(op_result);
@@ -866,6 +849,8 @@ void CompositeStoreOp::build(
     /*optional*/ AffineMap store_order, IntegerSet time_set,
     AffineMap time_order, AffineMap time_addr_map, uint32_t num_memref_indices,
     CompositeStoreOp::BodyBuilderFn bodyBuilder) {
+  auto& props = result.getOrAddProperties<Properties>();
+
   assert((store_set.getNumDims() == store_order.getNumDims()) &&
          "The number of inputs in store set should match with number of "
          "inputs in store order");
@@ -884,24 +869,16 @@ void CompositeStoreOp::build(
 
   result.addOperands(memref);
   result.addOperands(operands);
-  if (dbgName) result.addAttribute(getDbgNameAttrName(result.name), dbgName);
-  if (store_set) {
-    result.addAttribute(getStoreSetAttrName(result.name),
-                        IntegerSetAttr::get(store_set));
-  }
-  result.addAttribute(getMapAttrStrName(), AffineMapAttr::get(map));
-  if (store_order) {
-    result.addAttribute(getStoreOrderAttrName(result.name),
-                        AffineMapAttr::get(store_order));
-  }
-  result.addAttribute(getTimeSetAttrName(result.name),
-                      IntegerSetAttr::get(time_set));
-  result.addAttribute(getTimeOrderAttrName(result.name),
-                      AffineMapAttr::get(time_order));
-  result.addAttribute(getTimeAddrMapAttrName(result.name),
-                      AffineMapAttr::get(time_addr_map));
-  result.addAttribute(getNumMemrefIndicesAttrName(result.name),
-                      builder.getI32IntegerAttr(num_memref_indices));
+
+  props.dbgName = dbgName;
+  props.affine_map = AffineMapAttr::get(map);
+  props.store_set = IntegerSetAttr::get(store_set);
+  props.store_order = AffineMapAttr::get(store_order);
+  props.time_set = IntegerSetAttr::get(time_set);
+  props.time_order = AffineMapAttr::get(time_order);
+  props.time_addr_map = AffineMapAttr::get(time_addr_map);
+  props.num_memref_indices = builder.getI32IntegerAttr(num_memref_indices);
+
   for (auto operand : operands) {
     bool is_vector_type =
         mlir::isa<VectorType, dataflow::CustomVectorType>(operand.getType());
@@ -909,8 +886,7 @@ void CompositeStoreOp::build(
            "Operands of composite_store op can't contain VectorType item for "
            "non-coalesce store");
   }
-  result.addAttribute(getHaveInputVectorAttrName(result.name),
-                      builder.getBoolAttr(false));
+  props.have_input_vector = builder.getBoolAttr(false);
 
   // Add a body region with block arguments
   Region* bodyRegion = result.addRegion();
@@ -925,6 +901,8 @@ void CompositeStoreOp::build(OpBuilder& builder, OperationState& result,
                              IntegerSet time_set, AffineMap time_order,
                              AffineMap time_addr_map,
                              uint32_t num_memref_indices) {
+  auto& props = result.getOrAddProperties<Properties>();
+
   // checks
   assert((time_set.getNumDims() == time_order.getNumDims()) &&
          "The number of inputs in time set should match with number of "
@@ -938,28 +916,26 @@ void CompositeStoreOp::build(OpBuilder& builder, OperationState& result,
 
   result.addOperands(memref);
   result.addOperands(operands);
-  if (dbgName) result.addAttribute(getDbgNameAttrName(result.name), dbgName);
-  result.addAttribute(getMapAttrStrName(), AffineMapAttr::get(map));
-  result.addAttribute(getTimeSetAttrName(result.name),
-                      IntegerSetAttr::get(time_set));
-  result.addAttribute(getTimeOrderAttrName(result.name),
-                      AffineMapAttr::get(time_order));
-  result.addAttribute(getTimeAddrMapAttrName(result.name),
-                      AffineMapAttr::get(time_addr_map));
-  result.addAttribute(getNumMemrefIndicesAttrName(result.name),
-                      builder.getI32IntegerAttr(num_memref_indices));
+
+  props.dbgName = dbgName;
+  props.affine_map = AffineMapAttr::get(map);
+  props.time_set = IntegerSetAttr::get(time_set);
+  props.time_order = AffineMapAttr::get(time_order);
+  props.time_addr_map = AffineMapAttr::get(time_addr_map);
+  props.num_memref_indices = builder.getI32IntegerAttr(num_memref_indices);
+
   bool is_vector_type =
       mlir::isa<VectorType, dataflow::CustomVectorType>(operands[0].getType());
   assert((is_vector_type) && "input vector is required for coalesce store");
-  result.addAttribute(getHaveInputVectorAttrName(result.name),
-                      builder.getBoolAttr(true));
+  props.have_input_vector = builder.getBoolAttr(true);
+
   // for coalesce store, store_order attr is not allowed from users. so set
   // store_order to Identity map
   auto num_of_layout_dims = map.getResults().size();
   auto store_order_map = AffineMap::getMultiDimIdentityMap(
       num_of_layout_dims, builder.getContext());
-  result.addAttribute(getStoreOrderAttrName(result.name),
-                      AffineMapAttr::get(store_order_map));
+  props.store_order = AffineMapAttr::get(store_order_map);
+
   // Add a body region with block arguments
   Region* bodyRegion = result.addRegion();
   bodyRegion->push_back(new Block);
@@ -2335,11 +2311,13 @@ ParseResult SymbolicVectorLoadOp::parse(OpAsmParser& parser,
 
   IntegerAttr num_indices_attr = builder.getI32IntegerAttr(indices.size());
   result.attributes.push_back(builder.getNamedAttr(
-      SymbolicVectorLoadOp::getNumIndicesAttrName(result.name), num_indices_attr));
+      SymbolicVectorLoadOp::getNumIndicesAttrName(result.name),
+      num_indices_attr));
 
   IntegerAttr num_strides_attr = builder.getI32IntegerAttr(strides.size());
   result.attributes.push_back(builder.getNamedAttr(
-      SymbolicVectorLoadOp::getNumStridesAttrName(result.name), num_strides_attr));
+      SymbolicVectorLoadOp::getNumStridesAttrName(result.name),
+      num_strides_attr));
 
   return failure(op_result);
 }
