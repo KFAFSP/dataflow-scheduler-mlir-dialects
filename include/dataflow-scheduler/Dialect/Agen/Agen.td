@@ -416,71 +416,58 @@ def Agen_CompositeLoadAndStoreOp : Agen_Op<"composite_load_and_store", [
   }];
 }
 
-//===----------------------------------------------------------------------===//
-// Operations (cont'd)
-//===----------------------------------------------------------------------===//
-
-// FIXME: All these operations have problematic definitions due to improper use
-//        of ODS that need to be updated.
-
-def Agen_CompositeLoadOp:Agen_Op<"composite_load",
-        [DeclareOpInterfaceMethods<AffineMapAccessInterface>,
-        MemRefsNormalizable,
-        ImplicitAgenTerminator]> {
-
+def Agen_CompositeLoadOp:Agen_Op<"composite_load", [
+    DeclareOpInterfaceMethods<AffineMapAccessInterface>,
+    MemRefsNormalizable,
+    ImplicitAgenTerminator,
+    AttrSizedOperandSegments]> {
   let summary = "agen composite load operation";
-  let arguments = (ins Arg<AnyMemRef, "the reference to load from",
-        [MemRead]>:$mem_ref,
-        OptionalAttr<StrAttr>:$dbgName,
-        AffineMapAttr:$affine_map,
-        Builtin_IntegerSetAttr:$load_set,
-        AffineMapAttr:$load_order,
-        Builtin_IntegerSetAttr:$time_set,
-        AffineMapAttr:$time_order,
-        AffineMapAttr:$time_addr_map,
-        I32Attr:$num_memref_indices,
-        Variadic<Index>:$operands1);
+  let arguments = (ins
+    Arg<AnyMemRef, "the reference to load from", [MemRead]>:$mem_ref,
+    OptionalAttr<StrAttr>:$dbg_name,
+    AffineMapAttr:$affine_map,
+    Variadic<Index>:$map_operands,
+    Builtin_IntegerSetAttr:$load_set,
+    AffineMapAttr:$load_order,
+    Variadic<Index>:$time_symbols,
+    Builtin_IntegerSetAttr:$time_set,
+    AffineMapAttr:$time_order,
+    AffineMapAttr:$time_addr_map);
   let regions = (region SizedRegion<1>:$region);
 
   let skipDefaultBuilders = 1;
-  let hasCustomAssemblyFormat = 1;
-
   let builders = [
     /// Builds a composite load op with the specified map and operands.
-    OpBuilder<(ins "Value":$memref, "mlir::StringAttr":$dbgName, "mlir::AffineMap":$map, "ValueRange":$operands1,
-      "Type":$load_type, "IntegerSet":$load_set, "mlir::AffineMap":$load_order,
-      "IntegerSet":$time_set, "mlir::AffineMap":$time_order, "mlir::AffineMap":$time_addr_map,
-      "uint32_t":$num_memref_indices,
-      CArg<"function_ref<void(OpBuilder &, Location, Value, ValueRange)>",
-           "nullptr">:$bodyBuilder)>
+    OpBuilder<(ins
+      "Value":$mem_ref, "StringAttr":$dbg_name, "AffineMap":$affine_map,
+      "ValueRange":$map_operands, "VectorType":$load_type, "IntegerSet":$load_set,
+      "AffineMap":$load_order, "ValueRange":$time_symbols, "IntegerSet":$time_set,
+      "mlir::AffineMap":$time_order, "mlir::AffineMap":$time_addr_map)>
   ];
 
-  let extraClassDeclaration =  [{
-    using BodyBuilderFn =
-        function_ref<void(OpBuilder &, Location, Value, ValueRange)>;
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 
+  let extraClassDeclaration =  [{
     // Returns the memref value type.
     [[deprecated("use getMemRef().getType()")]]
     MemRefType getMemRefType() { return getMemRef().getType(); }
 
-    [[nodiscard]] auto getLoadInductionVar() -> Value {
-        return getRegion().getBlocks().begin()->getArgument(0);
+    [[nodiscard]] auto getLoadInductionVar() -> TypedValue<VectorType> {
+      return cast<TypedValue<VectorType>>(
+        getRegion().getBlocks().begin()->getArgument(0));
     }
     [[deprecated("use getLoadInductionVar().getType()")]]
     Type getLoadInductionVarType() { return getLoadInductionVar().getType(); }
 
+    [[deprecated("use getMapOperands()")]]
     ::mlir::Operation::operand_range getMapIndices() {
-      return getOperands1().slice(0, getNumMemrefIndices());
-    }
-
-    const ::mlir::Operation::operand_range getTimeSymbols() {
-      auto time_symbols_size = getOperands1().size() - getNumMemrefIndices();
-      return getOperands1().slice(getNumMemrefIndices(), time_symbols_size);
+      return getMapOperands();
     }
 
     CompositeLoadOp cloneWithNewAccessInfo(OpBuilder &builder,
-        const Value &mem_view, const AffineMap &subscripts_map,
-        const SmallVectorImpl<Value> &indices, const IntegerSet &time_set);
+        Value mem_view, const AffineMap &subscripts_map,
+        ValueRange indices, const IntegerSet &time_set);
 
     //===------------------------------------------------------------------===//
     // AffineMapAccessInterface
@@ -491,6 +478,13 @@ def Agen_CompositeLoadOp:Agen_Op<"composite_load",
     }
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// Operations (cont'd)
+//===----------------------------------------------------------------------===//
+
+// FIXME: All these operations have problematic definitions due to improper use
+//        of ODS that need to be updated.
 
 def Agen_CompositeStoreOp:Agen_Op<"composite_store",
         [DeclareOpInterfaceMethods<AffineMapAccessInterface>,

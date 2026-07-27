@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.21)
 # Add custom modules to the search path.
 list(PREPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
-project(DataflowSchedulerDialects 
+project(DataflowSchedulerDialects
   VERSION 0.1
   LANGUAGES C CXX
 )
@@ -14,9 +14,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR ON)
 set(LLVM_LIT_ARGS "-sv" CACHE STRING "Default options for lit")
 
+add_compile_options(-Werror)
+
 if(PROJECT_IS_TOP_LEVEL)
   # Treat all warnings as errors to prevent regressions.
-  add_compile_options(-Werror)
+
 
   # Find MLIR.
   find_package(MLIR REQUIRED CONFIG)
@@ -101,15 +103,15 @@ if(DataflowSchedulerDialects_ENABLE_PYTHON_BINDINGS)
     set(MLIR_BINDINGS_PYTHON_NB_DOMAIN "mlir_scheduler" CACHE STRING "" FORCE)
   endif()
   if(NOT DEFINED MLIR_BINDINGS_PYTHON_INSTALL_PREFIX)
-    set(MLIR_BINDINGS_PYTHON_INSTALL_PREFIX 
-      "python_packages/scheduler/${MLIR_PYTHON_PACKAGE_PREFIX}" 
+    set(MLIR_BINDINGS_PYTHON_INSTALL_PREFIX
+      "python_packages/scheduler/${MLIR_PYTHON_PACKAGE_PREFIX}"
       CACHE STRING "" FORCE
     )
   endif()
 endif()
 
 # Include DataflowSchedulerDialects CMake module.
-set(DataflowSchedulerDialects_INCLUDE_DIRS 
+set(DataflowSchedulerDialects_INCLUDE_DIRS
   ${PROJECT_SOURCE_DIR}/include
   ${PROJECT_BINARY_DIR}/include
   CACHE STRING "" FORCE

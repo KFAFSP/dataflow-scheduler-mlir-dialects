@@ -280,6 +280,7 @@ ParseResult CompositeLoadAndStoreOp::parse(OpAsmParser& parser,
     return failure();
   }
 
+  // FIXME: Can't have optional attr dict before region.
   if (parser.parseOptionalAttrDict(result.attributes)) {
     return failure();
   }
@@ -493,109 +494,96 @@ CompositeLoadAndStoreOp CompositeLoadAndStoreOp::cloneWithNewAccessInfo(
 
 ParseResult CompositeLoadOp::parse(OpAsmParser& parser,
                                    OperationState& result) {
-  auto& builder = parser.getBuilder();
-  auto index_type = builder.getIndexType();
   auto& props = result.getOrAddProperties<Properties>();
 
-  MemRefType memref_type;
-  Type inductionVar_type;
-  OpAsmParser::UnresolvedOperand memref_info;
-  OpAsmParser::Argument inductionVariable;
-  SmallVector<OpAsmParser::UnresolvedOperand, 1> map_operands;
-  SmallVector<OpAsmParser::UnresolvedOperand, 1> time_symbols_operands;
-  // Parse region arguments.
-  SmallVector<OpAsmParser::Argument, 1> regionArgs;
-  SmallVector<Type, 1> argTypes;
-  Region* body = result.addRegion();
-
-  auto op_result =
-      parser.parseOperand(memref_info) ||
-      parseAffineMapOfSSAIds(parser, props.affine_map, map_operands) ||
-      parser.parseKeyword("time_symbols") ||
-      parser.parseOperandList(time_symbols_operands,
-                              OpAsmParser::Delimiter::Paren) ||
-      parser.parseLParen() || parser.parseArgument(inductionVariable) ||
-      parser.parseColonType(inductionVar_type) || parser.parseRParen() ||
-      parser.parseOptionalAttrDict(result.attributes);
-
-  // Induction variable.
-  inductionVariable.type = inductionVar_type;
-  regionArgs.push_back(inductionVariable);
-  argTypes.push_back(inductionVar_type);
-
-  op_result =
-      op_result || parser.parseRegion(*body, regionArgs) ||
-      parser.parseColonType(memref_type) ||
-      parser.resolveOperand(memref_info, memref_type, result.operands) ||
-      parser.resolveOperands(map_operands, index_type, result.operands) ||
-      parser.resolveOperands(time_symbols_operands, index_type,
-                             result.operands);
-
-  props.num_memref_indices = builder.getI32IntegerAttr(map_operands.size());
-
-  std::optional<NamedAttribute> load_set_attr = result.attributes.getNamed(
-      CompositeLoadOp::getLoadSetAttrName(result.name));
-  if (!load_set_attr.has_value()) {
-    return parser.emitError(parser.getNameLoc())
-           << "Load set is missing in the operation";
+  OpAsmParser::UnresolvedOperand mem_ref;
+  SmallVector<OpAsmParser::UnresolvedOperand> map_operands;
+  if (parser.parseOperand(mem_ref) ||
+      parseAffineMapOfSSAIds(parser, props.affine_map, map_operands)) {
+    return failure();
   }
 
-  auto load_set =
-      mlir::dyn_cast<IntegerSetAttr>(load_set_attr->getValue()).getValue();
+  SmallVector<OpAsmParser::UnresolvedOperand> time_symbols;
+  if (parser.parseKeyword("time_symbols") ||
+      parser.parseOperandList(time_symbols, AsmParser::Delimiter::Paren)) {
+    return failure();
+  }
+
+  OpAsmParser::Argument induction_var;
+  if (parser.parseLParen() || parser.parseArgument(induction_var, true) ||
+      parser.parseRParen()) {
+    return failure();
+  }
+
+  // FIXME: Can't have optional attr dict before region.
+  if (parser.parseOptionalAttrDict(result.attributes)) {
+    return failure();
+  }
+
+  if (parser.parseRegion(*result.addRegion(), {induction_var})) {
+    return failure();
+  }
+
+  Type mem_ref_type;
+  if (parser.parseColonType(mem_ref_type)) {
+    return failure();
+  }
+
+  const auto index_type = parser.getBuilder().getIndexType();
+  if (parser.resolveOperand(mem_ref, mem_ref_type, result.operands) ||
+      parser.resolveOperands(map_operands, index_type, result.operands) ||
+      parser.resolveOperands(time_symbols, index_type, result.operands)) {
+    return failure();
+  }
+
+  props.operandSegmentSizes = {1, static_cast<int32_t>(map_operands.size()),
+                               static_cast<int32_t>(time_symbols.size())};
+
+  return success();
+}
+
+auto CompositeLoadOp::verify() -> LogicalResult {
+  const auto affine_map = getAffineMap();
 
   // TODO: enhance this with finding constant values and make sure they match.
-  if (load_set.getNumDims() < props.affine_map.getValue().getNumResults()) {
-    return parser.emitError(parser.getNameLoc())
-           << "Load set and Array dimensions should match";
+  const auto load_set = getLoadSet().getValue();
+  if (load_set.getNumDims() < affine_map.getNumResults()) {
+    return emitOpError() << "load set and Array dimensions should match";
   }
 
-  std::optional<NamedAttribute> load_order_attr = result.attributes.getNamed(
-      CompositeLoadOp::getLoadOrderAttrName(result.name));
-  if (load_order_attr.has_value()) {
-    auto load_order =
-        mlir::dyn_cast<AffineMapAttr>(load_order_attr->getValue()).getValue();
-    if (load_set.getNumDims() != load_order.getNumDims()) {
-      return parser.emitError(parser.getNameLoc())
-             << "Load set and order dimensions should match";
-    }
-  } else {
-    return parser.emitError(parser.getNameLoc())
-           << "Load order is missing in the operation";
+  const auto load_order = getLoadOrder();
+  if (load_set.getNumDims() != load_order.getNumDims()) {
+    return emitOpError() << "load set and order dimensions should match";
   }
 
-  return failure(op_result);
+  return success();
 }
 
 void CompositeLoadOp::print(OpAsmPrinter& p) {
-  auto& op = *this;
-  p << ' ' << op.getMemRef() << '[';
-  if (AffineMapAttr map_attr =
-          op->getAttrOfType<AffineMapAttr>(op.getMapAttrStrName()))
-    p.printAffineMapOfSSAIds(map_attr, op.getMapIndices());
-  p << ']';
+  p << ' ' << getMemRef();
+  printAffineMapOfSSAIds(p, *this, getAffineMapAttr(), getMapOperands());
   p.printNewline();
   p << " time_symbols(";
-  p.printOperands(op.getTimeSymbols());
+  p << getTimeSymbols();
   p << ')';
-  p << '(' << op.getLoadInductionVar() << ':' << op.getLoadInductionVar().getType()
+  p << '(' << getLoadInductionVar() << ':' << getLoadInductionVar().getType()
     << ')';
   p.printNewline();
-  p.printOptionalAttrDict(op->getAttrs(),
-                          /*elidedAttrs=*/{op.getMapAttrStrName(),
-                                           op.getNumMemrefIndicesAttrName()});
+  p.printOptionalAttrDict(
+      (*this)->getAttrs(),
+      /*elidedAttrs=*/{getMapAttrStrName(), getOperandSegmentSizesAttrName()});
   p.printNewline();
-  p.printRegion(op.getRegion(), false, true);
-  p << " : " << op.getMemRef().getType();
+  p.printRegion(getRegion(), false, true);
+  p << " : " << getMemRef().getType();
 }
 
 void CompositeLoadOp::build(OpBuilder& builder, OperationState& result,
-                            Value memref, mlir::StringAttr dbgName,
-                            AffineMap map, ValueRange operands, Type load_type,
-                            IntegerSet load_set, AffineMap load_order,
+                            Value memref, StringAttr dbg_name,
+                            AffineMap affine_map, ValueRange map_operands,
+                            VectorType load_type, IntegerSet load_set,
+                            AffineMap load_order, ValueRange time_symbols,
                             IntegerSet time_set, AffineMap time_order,
-                            AffineMap time_addr_map,
-                            uint32_t num_memref_indices,
-                            CompositeLoadOp::BodyBuilderFn bodyBuilder) {
+                            AffineMap time_addr_map) {
   auto& props = result.getOrAddProperties<Properties>();
 
   // Checks
@@ -616,67 +604,56 @@ void CompositeLoadOp::build(OpBuilder& builder, OperationState& result,
          "match with each other");
 
   result.addOperands(memref);
-  result.addOperands(operands);
+  result.addOperands(map_operands);
 
-  props.dbgName = dbgName;
+  props.dbg_name = dbg_name;
   props.load_set = IntegerSetAttr::get(load_set);
-  props.affine_map = AffineMapAttr::get(map);
+  props.affine_map = AffineMapAttr::get(affine_map);
   props.load_order = AffineMapAttr::get(load_order);
   props.time_set = IntegerSetAttr::get(time_set);
   props.time_order = AffineMapAttr::get(time_order);
   props.time_addr_map = AffineMapAttr::get(time_addr_map);
-  props.num_memref_indices = builder.getI32IntegerAttr(num_memref_indices);
+  props.operandSegmentSizes = {1, static_cast<int32_t>(map_operands.size()),
+                               static_cast<int32_t>(time_symbols.size())};
 
   // Add a body region with block arguments
-  Region* bodyRegion = result.addRegion();
-  bodyRegion->push_back(new Block);
-  Block& bodyBlock = bodyRegion->front();
+  auto& body = result.addRegion()->emplaceBlock();
   // FIXME: which getLoc() should be used here?
-  bodyBlock.addArgument(load_type, memref.getLoc());
-  CompositeLoadOp::ensureTerminator(*bodyRegion, builder, result.location);
+  body.addArgument(load_type, memref.getLoc());
+  CompositeLoadOp::ensureTerminator(*body.getParent(), builder,
+                                    result.location);
 }
 
 CompositeLoadOp CompositeLoadOp::cloneWithNewAccessInfo(
-    OpBuilder& builder, const Value& mem_view, const AffineMap& subscripts_map,
-    const SmallVectorImpl<Value>& indices, const IntegerSet& time_set) {
-  // Gather the operands for the new op. These are ordered as follows:
-  //   <indices>, <time symbols>
-  SmallVector<Value, 16> operands;
-  for (auto& index : indices) operands.push_back(index);
-  int remaining_operands_idx = getNumMemrefIndices();
-  for (std::size_t i = remaining_operands_idx; i < getOperands1().size(); ++i)
-    operands.emplace_back(getOperands1()[i]);
-
-  // Create the new comp op in the innermost loop. Builder should already be set
-  // to correct location.
-  auto& op = *this;
-  auto new_comp_load = CompositeLoadOp::create(
-      builder, op->getLoc(), mem_view,
-      getDbgName().has_value() ? builder.getStringAttr(getDbgName().value())
-                               : builder.getStringAttr(""),
-      subscripts_map, operands, cast<VectorType>(getLoadInductionVar().getType()),
-      getLoadSet().getValue(), getLoadOrder(), time_set, getTimeOrder(),
-      getTimeAddrMap(), indices.size());
+    OpBuilder& builder, Value mem_view, const AffineMap& subscripts_map,
+    ValueRange indices, const IntegerSet& time_set) {
+  auto result = CompositeLoadOp::create(
+      builder, getLoc(), mem_view, getDbgNameAttr(), subscripts_map, indices,
+      getLoadInductionVar().getType(), getLoadSet().getValue(), getLoadOrder(),
+      getTimeSymbols(), time_set, getTimeOrder(), getTimeAddrMap());
 
   // Delete the yield op automatically inserted to the body. When the original
   // loop body is cloned, the appropriate yield op will also be cloned.
-  auto terminator = new_comp_load.getRegion().back().getTerminator();
+  auto terminator = result.getRegion().back().getTerminator();
   if (terminator) terminator->erase();
 
   // Clone the body.
-  auto insert_pt = builder.saveInsertionPoint();
-  builder.setInsertionPointToStart(&new_comp_load.getRegion().front());
-  IRMapping ir_map;
-  for (auto& o : getRegion().getOps()) (void)builder.clone(*&o, ir_map);
-  builder.restoreInsertionPoint(insert_pt);
+  {
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(result.getBody());
+    IRMapping ir_map;
+    for (auto& o : getRegion().getOps()) {
+      std::ignore = builder.clone(o, ir_map);
+    }
+  }
 
   // Replace any uses of the old load_iv with the new one.
   auto orig_load_iv = getLoadInductionVar();
-  auto new_load_iv = new_comp_load.getLoadInductionVar();
-  for (auto& o : new_comp_load.getRegion().getOps())
+  auto new_load_iv = result.getLoadInductionVar();
+  for (auto& o : result.getRegion().getOps())
     o.replaceUsesOfWith(orig_load_iv, new_load_iv);
 
-  return new_comp_load;
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
