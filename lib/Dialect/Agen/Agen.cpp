@@ -577,7 +577,7 @@ void CompositeLoadOp::print(OpAsmPrinter& p) {
   p << " time_symbols(";
   p.printOperands(op.getTimeSymbols());
   p << ')';
-  p << '(' << op.getLoadInductionVar() << ':' << op.getLoadInductionVarType()
+  p << '(' << op.getLoadInductionVar() << ':' << op.getLoadInductionVar().getType()
     << ')';
   p.printNewline();
   p.printOptionalAttrDict(op->getAttrs(),
@@ -585,7 +585,7 @@ void CompositeLoadOp::print(OpAsmPrinter& p) {
                                            op.getNumMemrefIndicesAttrName()});
   p.printNewline();
   p.printRegion(op.getRegion(), false, true);
-  p << " : " << op.getMemRefType();
+  p << " : " << op.getMemRef().getType();
 }
 
 void CompositeLoadOp::build(OpBuilder& builder, OperationState& result,
@@ -654,7 +654,7 @@ CompositeLoadOp CompositeLoadOp::cloneWithNewAccessInfo(
       builder, op->getLoc(), mem_view,
       getDbgName().has_value() ? builder.getStringAttr(getDbgName().value())
                                : builder.getStringAttr(""),
-      subscripts_map, operands, cast<VectorType>(getLoadInductionVarType()),
+      subscripts_map, operands, cast<VectorType>(getLoadInductionVar().getType()),
       getLoadSet().getValue(), getLoadOrder(), time_set, getTimeOrder(),
       getTimeAddrMap(), indices.size());
 
@@ -832,7 +832,7 @@ void CompositeStoreOp::print(OpAsmPrinter& p) {
   if (!op.getHaveInputVector()) {
     p.printRegion(op.getRegion(), false, true);
   }
-  p << " : " << op.getMemRefType();
+  p << " : " << op.getMemRef().getType();
   if (op.getHaveInputVector()) {
     if (auto vtype = dyn_cast<VectorType>(getInputVector().value().getType()))
       p << " , " << vtype;
