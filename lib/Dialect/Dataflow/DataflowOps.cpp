@@ -64,7 +64,7 @@ void ProgramUnitOp::build(OpBuilder& builder, OperationState& result,
   //  result.addTypes(unitId.getType());
 
   if (!precision_attr.getValue().str().empty()) {
-    result.addAttribute(dataflow::ProgramUnitOp::getPrecisionAttrStrName(),
+    result.addAttribute(dataflow::ProgramUnitOp::getPrecisionAttrName(result.name),
                         precision_attr);
   }
 

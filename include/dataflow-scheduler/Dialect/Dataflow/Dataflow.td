@@ -118,7 +118,6 @@ def Dataflow_ProgramUnitOp:Dataflow_Op<"program_unit",
     let extraClassDeclaration = [{
     using BodyBuilderFn =
         function_ref<void(OpBuilder &, Location, ValueRange)>;
-        static StringRef getPrecisionAttrStrName() { return "precision"; }
     }];
 
     let hasCustomAssemblyFormat = 1;
@@ -161,10 +160,10 @@ def Dataflow_CreateMulticastGroupOp:Dataflow_Op<"create_multicast_group",
     let summary = "Creates a multicast group.";
     let description = [{
     "This operation creats a multicast group which specifies the unit ID of the
-     producer of data, list of unit IDs of the consumers, and additional 
+     producer of data, list of unit IDs of the consumers, and additional
      information such as `group_id`, `count` and the number of sharers. Note that the
-     list of consumers could be left empty, however when it is not empty, the 
-     size of that list must match the `num_consumers` (number of sharers) field. 
+     list of consumers could be left empty, however when it is not empty, the
+     size of that list must match the `num_consumers` (number of sharers) field.
      `count` field specifies the initial number of outstanding requests."
     ```mlir
         %group = dataflow.create_multicast_group (%1 -> (%2, %3, %4)) {count = 0 : i32, group_id = 1 : i32, num_consumers = 2 : i32} : index
