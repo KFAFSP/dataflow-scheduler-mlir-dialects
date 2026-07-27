@@ -93,7 +93,6 @@ def UniformizeRegionsOp : Uniform_Op<"uniformize_regions",
   let hasCustomAssemblyFormat = 1;
 
   let extraClassDeclaration = [{
-    static StringRef getListSizesAttrStrName() {return "list_sizes";}
     Value getRegionArg(int i) {return getRegion(i).getArgument(0);}
     ValueRange getRegionUnitList(int);
     std::optional<ValueRange> getRegionUnitList(Value);
@@ -201,7 +200,6 @@ def EqualizePatternOp : Uniform_Op<"equalize_pattern",
   let hasCustomAssemblyFormat = 1;
 
   let extraClassDeclaration = [{
-    static StringRef getListSizesAttrStrName() {return "list_sizes";}
     Value getRegionArg(int i) {return getRegion(i).getArgument(0);}
     ValueRange getRegionUnitList(int);
     std::optional<ValueRange> getRegionUnitList(Value);

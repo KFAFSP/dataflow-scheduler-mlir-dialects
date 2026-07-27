@@ -90,7 +90,7 @@ ParseResult UniformizeRegionsOp::parse(OpAsmParser& parser,
   result.regions.pop_back();  // pop the empty region
   op_result = op_result || parser.parseOptionalRBrace() ||
               parser.parseOptionalAttrDict(result.attributes);
-  result.addAttribute(getListSizesAttrStrName(),
+  result.addAttribute(getListSizesAttrName(result.name),
                       builder.getI32ArrayAttr(list_sizes));
 
   return failure(op_result);
@@ -267,7 +267,7 @@ ParseResult EqualizePatternOp::parse(OpAsmParser& parser,
   }
   result.regions.pop_back();  // pop the empty region
   op_result = op_result || parser.parseOptionalRBrace();
-  result.addAttribute(getListSizesAttrStrName(),
+  result.addAttribute(getListSizesAttrName(result.name),
                       builder.getI32ArrayAttr(list_sizes));
 
   return failure(op_result);
