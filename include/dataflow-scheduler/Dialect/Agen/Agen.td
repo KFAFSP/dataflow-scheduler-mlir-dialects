@@ -321,9 +321,9 @@ def Agen_CompositeLoadAndStoreOp : Agen_Op<"composite_load_and_store", [
     Arg<AnyMemRef, "the reference to store into", [MemWrite]>:$dst_mem_ref,
     OptionalAttr<StrAttr>:$dbg_name,
     AffineMapAttr:$src_map,
-    Variadic<Index>:$src_operands,
+    Variadic<Index>:$src_map_operands,
     AffineMapAttr:$dst_map,
-    Variadic<Index>:$dst_operands,
+    Variadic<Index>:$dst_map_operands,
     Builtin_IntegerSetAttr:$load_set,
     AffineMapAttr:$load_order,
     Builtin_IntegerSetAttr:$store_set,
@@ -342,8 +342,8 @@ def Agen_CompositeLoadAndStoreOp : Agen_Op<"composite_load_and_store", [
   let builders = [
     OpBuilder<(ins
         "Value":$src_mem_ref, "Value":$dst_mem_ref, "StringAttr":$dbg_name,
-        "AffineMapAttr":$src_map, "ValueRange":$src_operands, "AffineMapAttr":$dst_map,
-        "ValueRange":$dst_operands, "IntegerSetAttr":$load_set, "AffineMapAttr":$load_order,
+        "AffineMapAttr":$src_map, "ValueRange":$src_map_operands, "AffineMapAttr":$dst_map,
+        "ValueRange":$dst_map_operands, "IntegerSetAttr":$load_set, "AffineMapAttr":$load_order,
         "IntegerSetAttr":$store_set, "AffineMapAttr":$store_order, "ValueRange":$time_symbols,
         "IntegerSetAttr":$time_set, "AffineMapAttr":$time_order, "AffineMapAttr":$load_time_addr_map,
         "AffineMapAttr":$store_time_addr_map, "VectorType":$type,
@@ -353,8 +353,8 @@ def Agen_CompositeLoadAndStoreOp : Agen_Op<"composite_load_and_store", [
     /// Builds a composite load_and_store op with the specified map and operands.
     OpBuilder<(ins
         "Value":$src_mem_ref, "Value":$dst_mem_ref, "StringAttr":$dbg_name,
-        "AffineMap":$src_map, "ValueRange":$src_operands, "AffineMap":$dst_map,
-        "ValueRange":$dst_operands, "IntegerSet":$load_set, "AffineMap":$load_order,
+        "AffineMap":$src_map, "ValueRange":$src_map_operands, "AffineMap":$dst_map,
+        "ValueRange":$dst_map_operands, "IntegerSet":$load_set, "AffineMap":$load_order,
         "IntegerSet":$store_set, "AffineMap":$store_order, "ValueRange":$time_symbols,
         "IntegerSet":$time_set, "AffineMap":$time_order, "AffineMap":$load_time_addr_map,
         "AffineMap":$store_time_addr_map, "VectorType":$type,
@@ -390,21 +390,21 @@ def Agen_CompositeLoadAndStoreOp : Agen_Op<"composite_load_and_store", [
     [[deprecated("use getLoadInductionVar().getType()")]]
     Type getLoadInductionVarType() { return getLoadInductionVar().getType(); }
 
-    [[deprecated("use getSrcOperands()")]]
+    [[deprecated("use getSrcMapOperands()")]]
     ::mlir::Operation::operand_range getSrcMapIndices() {
-      return getSrcOperands();
+      return getSrcMapOperands();
     }
-    [[deprecated("use getDstOperands()")]]
+    [[deprecated("use getDstMapOperands()")]]
     ::mlir::Operation::operand_range getDstMapIndices() {
-      return getDstOperands();
+      return getDstMapOperands();
     }
-    [[deprecated("use getSrcOperands()")]]
+    [[deprecated("use getSrcMapOperands()")]]
     ::mlir::Operation::operand_range src_indices() {
-      return getSrcOperands();
+      return getSrcMapOperands();
     }
-    [[deprecated("use getDstOperands()")]]
+    [[deprecated("use getDstMapOperands()")]]
     ::mlir::Operation::operand_range dst_indices() {
-      return getDstOperands();
+      return getDstMapOperands();
     }
 
     CompositeLoadAndStoreOp cloneWithNewAccessInfo(OpBuilder &builder,

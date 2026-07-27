@@ -321,9 +321,9 @@ ParseResult CompositeLoadAndStoreOp::parse(OpAsmParser& parser,
 
 void CompositeLoadAndStoreOp::print(OpAsmPrinter& p) {
   p << " src:" << getSrcMemRef();
-  printAffineMapOfSSAIds(p, *this, getSrcMapAttr(), getSrcOperands());
+  printAffineMapOfSSAIds(p, *this, getSrcMapAttr(), getSrcMapOperands());
   p << " dst:" << getDstMemRef();
-  printAffineMapOfSSAIds(p, *this, getDstMapAttr(), getDstOperands());
+  printAffineMapOfSSAIds(p, *this, getDstMapAttr(), getDstMapOperands());
 
   p.printNewline();
   p << " time_symbols(";
@@ -350,7 +350,7 @@ void CompositeLoadAndStoreOp::print(OpAsmPrinter& p) {
 void CompositeLoadAndStoreOp::build(
     OpBuilder& builder, OperationState& state, Value src_mem_ref,
     Value dst_mem_ref, StringAttr dbg_name, AffineMapAttr src_map,
-    ValueRange src_operands, AffineMapAttr dst_map, ValueRange dst_operands,
+    ValueRange src_map_operands, AffineMapAttr dst_map, ValueRange dst_map_operands,
     IntegerSetAttr load_set, AffineMapAttr load_order, IntegerSetAttr store_set,
     AffineMapAttr store_order, ValueRange time_symbols, IntegerSetAttr time_set,
     AffineMapAttr time_order, AffineMapAttr load_time_addr_map,
@@ -358,8 +358,8 @@ void CompositeLoadAndStoreOp::build(
     AgenRoutingDirectionAttr dir, Value multicast_info,
     function_ref<void(OpBuilder&, Location, Value)> body_builder) {
   state.addOperands({src_mem_ref, dst_mem_ref});
-  state.addOperands(src_operands);
-  state.addOperands(dst_operands);
+  state.addOperands(src_map_operands);
+  state.addOperands(dst_map_operands);
   state.addOperands(time_symbols);
   if (multicast_info) {
     state.operands.push_back(multicast_info);
@@ -382,8 +382,8 @@ void CompositeLoadAndStoreOp::build(
 
   props.operandSegmentSizes = {1,
                                1,
-                               static_cast<int32_t>(src_operands.size()),
-                               static_cast<int32_t>(dst_operands.size()),
+                               static_cast<int32_t>(src_map_operands.size()),
+                               static_cast<int32_t>(dst_map_operands.size()),
                                static_cast<int32_t>(time_symbols.size()),
                                multicast_info ? 1 : 0};
 
