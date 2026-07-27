@@ -75,29 +75,35 @@ ParseResult ConstantBitstreamOp::parse(OpAsmParser& parser,
   return failure(op_result);
 }
 
-void ConstantBitstreamOp::print(OpAsmPrinter& p) {
-  auto& op = *this;
+void ConstantBitstreamOp::print(OpAsmPrinter &p) {
+  auto &op = *this;
+  auto is_symbol_attr = op->getAttr("is_symbol");
+  bool convert_values = !is_symbol_attr || mlir::cast<BoolAttr>(is_symbol_attr).getValue() == false;
 
-  p << " {value = [";
+  if (convert_values) {
+    p << " {value = [";
 
-  // Print each of the interpreted_value elements as hex.
-  auto values = op.getValue().getValue();
-  unsigned values_size = values.size();
-  for (unsigned i = 0; i < values_size; ++i) {
-    auto int_attr = mlir::cast<IntegerAttr>(values[i]);
-    int64_t int_val = int_attr.getInt();
-    p << "0x" << llvm::Twine::utohexstr((uint64_t)int_val);
-    if (i < values_size - 1) p << ", ";
+    // Print each of the interpreted_value elements as hex.
+    auto values = op.getValue().getValue();
+    unsigned values_size = values.size();
+    for (unsigned i = 0; i < values_size; ++i) {
+      auto int_attr = mlir::cast<IntegerAttr>(values[i]);
+      int64_t int_val = int_attr.getInt();
+      p << "0x" << llvm::Twine::utohexstr((uint64_t)int_val);
+      if (i < values_size - 1) p << ", ";
+    }
+
+    p << "]}";
+  } else {
+    p.printOptionalAttrDict(op->getAttrs());
   }
-
-  p << "]}";
 
   // Print the return type.
   p << " : " << op.getType();
 }
 
 LogicalResult ConstantBitstreamOp::verify() {
-  auto& op = *this;
+  auto &op = *this;
 
   // The number of elements in the interpreted_value array should match the
   // number of elements in the result type. The result type is expected to be a
@@ -135,24 +141,28 @@ LogicalResult ConstantBitstreamOp::verify() {
     return failure();
   }
 
-  // The bitwidths of the elements of the value attribute should not exceed the
-  // bitwidth of the output vector element type.
-  auto values = op.getValue().getValue();
-  for (int i = 0; i < value_size; ++i) {
-    auto int_attr = mlir::dyn_cast<IntegerAttr>(values[i]);
-    if (!int_attr) {
-      op->emitOpError(
-          "value attribute should only contain integer representations");
-      return failure();
-    }
+  auto is_symbol_attr = op->getAttr("is_symbol");
+  bool convert_values = !is_symbol_attr || mlir::cast<BoolAttr>(is_symbol_attr).getValue() == false;
+  if (convert_values) {
+    // The bitwidths of the elements of the value attribute should not exceed the
+    // bitwidth of the output vector element type.
+    auto values = op.getValue().getValue();
+    for (int i = 0; i < value_size; ++i) {
+      auto int_attr = mlir::dyn_cast<IntegerAttr>(values[i]);
+      if (!int_attr) {
+        op->emitOpError(
+            "value attribute should only contain integer representations");
+        return failure();
+      }
 
-    int64_t int_val = int_attr.getInt();
-    int64_t mask = pow(2, result_bitwidth) - 1;
-    if ((int_val & mask) != int_val) {
-      op->emitOpError(
-          "value attribute contains element that exceeds bitwidth of output "
-          "element type");
-      return failure();
+      int64_t int_val = int_attr.getInt();
+      int64_t mask = pow(2, result_bitwidth) - 1;
+      if ((int_val & mask) != int_val) {
+        op->emitOpError(
+            "value attribute contains element that exceeds bitwidth of output "
+            "element type");
+        return failure();
+      }
     }
   }
 
