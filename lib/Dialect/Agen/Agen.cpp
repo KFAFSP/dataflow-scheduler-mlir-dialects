@@ -242,21 +242,21 @@ void VectorStoreOp::eraseOpAndUseChain() {
 
 ParseResult CompositeLoadAndStoreOp::parse(OpAsmParser& parser,
                                            OperationState& result) {
+  auto& props = result.getOrAddProperties<Properties>();
+
   OpAsmParser::UnresolvedOperand src_mem_ref;
-  AffineMapAttr src_map;
   SmallVector<OpAsmParser::UnresolvedOperand> src_operands;
   if (parser.parseKeyword("src") || parser.parseColon() ||
       parser.parseOperand(src_mem_ref) ||
-      parseAffineMapOfSSAIds(parser, src_map, src_operands)) {
+      parseAffineMapOfSSAIds(parser, props.src_map, src_operands)) {
     return failure();
   }
 
   OpAsmParser::UnresolvedOperand dst_mem_ref;
-  AffineMapAttr dst_map;
   SmallVector<OpAsmParser::UnresolvedOperand> dst_operands;
   if (parser.parseKeyword("dst") || parser.parseColon() ||
       parser.parseOperand(dst_mem_ref) ||
-      parseAffineMapOfSSAIds(parser, dst_map, dst_operands)) {
+      parseAffineMapOfSSAIds(parser, props.dst_map, dst_operands)) {
     return failure();
   }
 
@@ -308,14 +308,13 @@ ParseResult CompositeLoadAndStoreOp::parse(OpAsmParser& parser,
     return failure();
   }
 
-  result.addAttribute(getSrcMapAttrName(result.name), src_map);
-  result.addAttribute(getDstMapAttrName(result.name), dst_map);
-  result.addAttribute(getOperandSegmentSizesAttrName(result.name),
-                      parser.getBuilder().getDenseI32ArrayAttr(
-                          {1, 1, static_cast<int32_t>(src_operands.size()),
-                           static_cast<int32_t>(dst_operands.size()),
-                           static_cast<int32_t>(time_symbols.size()),
-                           multicast_info.location.isValid() ? 1 : 0}));
+  props.operandSegmentSizes = {1,
+                               1,
+                               static_cast<int32_t>(src_operands.size()),
+                               static_cast<int32_t>(dst_operands.size()),
+                               static_cast<int32_t>(time_symbols.size()),
+                               multicast_info.location.isValid() ? 1 : 0};
+
   return success();
 }
 
@@ -365,31 +364,27 @@ void CompositeLoadAndStoreOp::build(
     state.operands.push_back(multicast_info);
   }
 
-  state.addAttribute(getSrcMapAttrName(state.name), src_map);
-  state.addAttribute(getDstMapAttrName(state.name), dst_map);
-  state.addAttribute(getLoadSetAttrName(state.name), load_set);
-  state.addAttribute(getLoadOrderAttrName(state.name), load_order);
-  state.addAttribute(getStoreSetAttrName(state.name), store_set);
-  state.addAttribute(getStoreOrderAttrName(state.name), store_order);
-  state.addAttribute(getTimeSetAttrName(state.name), time_set);
-  state.addAttribute(getTimeOrderAttrName(state.name), time_order);
-  state.addAttribute(getLoadTimeAddrMapAttrName(state.name),
-                     load_time_addr_map);
-  state.addAttribute(getStoreTimeAddrMapAttrName(state.name),
-                     store_time_addr_map);
-  if (dbg_name) {
-    state.addAttribute(getDbgNameAttrName(state.name), dbg_name);
-  }
-  if (dir) {
-    state.addAttribute(getDirAttrName(state.name), dir);
-  }
+  auto& props = state.getOrAddProperties<Properties>();
 
-  state.addAttribute(
-      getOperandSegmentSizesAttrName(state.name),
-      builder.getDenseI32ArrayAttr(
-          {1, 1, static_cast<int32_t>(src_operands.size()),
-           static_cast<int32_t>(dst_operands.size()),
-           static_cast<int32_t>(time_symbols.size()), multicast_info ? 1 : 0}));
+  props.src_map = src_map;
+  props.dst_map = dst_map;
+  props.load_set = load_set;
+  props.load_order = load_order;
+  props.store_set = store_set;
+  props.store_order = store_order;
+  props.time_set = time_set;
+  props.time_order = time_order;
+  props.load_time_addr_map = load_time_addr_map;
+  props.store_time_addr_map = store_time_addr_map;
+  props.dbg_name = dbg_name;
+  props.dir = dir;
+
+  props.operandSegmentSizes = {1,
+                               1,
+                               static_cast<int32_t>(src_operands.size()),
+                               static_cast<int32_t>(dst_operands.size()),
+                               static_cast<int32_t>(time_symbols.size()),
+                               multicast_info ? 1 : 0};
 
   auto* body = &state.addRegion()->emplaceBlock();
   const auto load_induction_var = body->addArgument(type, state.location);
@@ -2461,11 +2456,13 @@ ParseResult SymbolicVectorStoreOp::parse(OpAsmParser& parser,
 
   IntegerAttr num_indices_attr = builder.getI32IntegerAttr(indices.size());
   result.attributes.push_back(builder.getNamedAttr(
-      SymbolicVectorStoreOp::getNumIndicesAttrName(result.name), num_indices_attr));
+      SymbolicVectorStoreOp::getNumIndicesAttrName(result.name),
+      num_indices_attr));
 
   IntegerAttr num_strides_attr = builder.getI32IntegerAttr(strides.size());
   result.attributes.push_back(builder.getNamedAttr(
-      SymbolicVectorStoreOp::getNumStridesAttrName(result.name), num_strides_attr));
+      SymbolicVectorStoreOp::getNumStridesAttrName(result.name),
+      num_strides_attr));
 
   return failure(op_result);
 }
