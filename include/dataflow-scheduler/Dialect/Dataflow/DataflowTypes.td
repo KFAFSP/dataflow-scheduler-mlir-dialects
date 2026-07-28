@@ -20,10 +20,11 @@
 #define DATAFLOW_SCHEDULER_DIALECT_DATAFLOW_DATAFLOWTYPES_TD
 
 include "dataflow-scheduler/Dialect/Dataflow/DataflowAttributes.td"
+include "mlir/IR/BuiltinTypeInterfaces.td"
 
 class Dataflow_Type<string name, string typeMnemonic, list<Trait> traits = []>
-    : TypeDef<Dataflow_Dialect, name, traits> {
-  let mnemonic = typeMnemonic;
+        : TypeDef<Dataflow_Dialect, name, traits> {
+    let mnemonic = typeMnemonic;
 }
 
 def Dataflow_CustomVectorType : Dataflow_Type<"CustomVector", "custom_vector"> {
@@ -40,7 +41,8 @@ def Dataflow_CustomVectorType : Dataflow_Type<"CustomVector", "custom_vector"> {
     ];
 }
 
-def Dataflow_CustomMXFloatType : Dataflow_Type<"CustomMXFloat", "mxfp"> {
+def Dataflow_CustomMXFloatType : Dataflow_Type<"CustomMXFloat", "mxfp", [
+        MemRefElementTypeInterface]> {
     let summary = "Dataflow custom MX float type";
 
     let parameters = (ins "unsigned":$width);
@@ -54,7 +56,8 @@ def Dataflow_CustomMXFloatType : Dataflow_Type<"CustomMXFloat", "mxfp"> {
     }];
 }
 
-def Dataflow_CustomMXIntType : Dataflow_Type<"CustomMXInt", "mxint"> {
+def Dataflow_CustomMXIntType : Dataflow_Type<"CustomMXInt", "mxint", [
+        MemRefElementTypeInterface]> {
     let summary = "Dataflow custom MX float type";
 
     let parameters = (ins "unsigned":$width);
