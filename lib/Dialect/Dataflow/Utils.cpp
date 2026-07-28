@@ -23,7 +23,9 @@
 #include "dataflow-scheduler/Dialect/Dataflow/Utils.h"
 
 #include <llvm/ADT/TypeSwitch.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include "dataflow-scheduler/Dialect/Dataflow/DataflowTypes.h"
 
 using namespace mlir;
 using namespace mlir::dataflow;
@@ -44,6 +46,17 @@ auto mlir::dataflow::getNumElements(Type type) -> int64_t {
       .Case([](VectorType vector) { return vector.getNumElements(); })
       .Case([](MemRefType memref) { return memref.getNumElements(); })
       .Case([](CustomVectorType custom) { return custom.getNumElements(); });
+}
+
+Type mlir::dataflow::getElementType(Type type) {
+  return llvm::TypeSwitch<Type, Type>(type)
+    .Case([](CustomVectorType custom) { return custom.getElementType(); })
+    .Case([](ShapedType shaped) { return shaped.getElementType(); })
+    .DefaultUnreachable();
+}
+
+unsigned mlir::dataflow::getElementTypeBitWidth(Type type) {
+  return getIntOrFloatBitWidth(getElementType(type));
 }
 
 int mlir::dataflow::getCoreletId(const GetUnitOp op) {

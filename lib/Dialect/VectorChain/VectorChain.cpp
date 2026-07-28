@@ -75,10 +75,12 @@ ParseResult ConstantBitstreamOp::parse(OpAsmParser& parser,
   return failure(op_result);
 }
 
-void ConstantBitstreamOp::print(OpAsmPrinter &p) {
-  auto &op = *this;
+void ConstantBitstreamOp::print(OpAsmPrinter& p) {
+  auto& op = *this;
   auto is_symbol_attr = op->getAttr("is_symbol");
-  bool convert_values = !is_symbol_attr || mlir::cast<BoolAttr>(is_symbol_attr).getValue() == false;
+  bool convert_values =
+      !is_symbol_attr ||
+      mlir::cast<BoolAttr>(is_symbol_attr).getValue() == false;
 
   if (convert_values) {
     p << " {value = [";
@@ -103,7 +105,7 @@ void ConstantBitstreamOp::print(OpAsmPrinter &p) {
 }
 
 LogicalResult ConstantBitstreamOp::verify() {
-  auto &op = *this;
+  auto& op = *this;
 
   // The number of elements in the interpreted_value array should match the
   // number of elements in the result type. The result type is expected to be a
@@ -142,10 +144,12 @@ LogicalResult ConstantBitstreamOp::verify() {
   }
 
   auto is_symbol_attr = op->getAttr("is_symbol");
-  bool convert_values = !is_symbol_attr || mlir::cast<BoolAttr>(is_symbol_attr).getValue() == false;
+  bool convert_values =
+      !is_symbol_attr ||
+      mlir::cast<BoolAttr>(is_symbol_attr).getValue() == false;
   if (convert_values) {
-    // The bitwidths of the elements of the value attribute should not exceed the
-    // bitwidth of the output vector element type.
+    // The bitwidths of the elements of the value attribute should not exceed
+    // the bitwidth of the output vector element type.
     auto values = op.getValue().getValue();
     for (int i = 0; i < value_size; ++i) {
       auto int_attr = mlir::dyn_cast<IntegerAttr>(values[i]);
@@ -194,39 +198,25 @@ LogicalResult CastOp::verify() {
 LogicalResult ShuffleOp::verify() {
   auto& op = *this;
 
-  auto result_type = dyn_cast<VectorType>(op.getResult().getType());
-  if (!result_type) {
-    op->emitOpError("result type is not a vector");
-    return failure();
-  }
-
   // The number of elements in the result type should be equivalent to the
   // product of the number of elements in the indices and the number of
   // repetitions.
   auto indices = op.getIndices();
   auto indices_size = indices.size();
-  auto result_size = static_cast<std::size_t>(result_type.getNumElements());
-  if (result_size != indices_size * op.getRepetition()) {
+  const auto num_elements =
+      static_cast<std::size_t>(dataflow::getNumElements(getResult().getType()));
+  if (num_elements != indices_size * op.getRepetition()) {
     op->emitOpError("result does not scale with indices and repetitions");
     return failure();
   }
 
-  auto input_type = op.getInput().getType();
-  Type input_elements_type;
-  int input_num_of_elements = 0;
-  // The input to shuffle is expected to be a VectorTyep or IBMVectorFloatType.
-  if (auto const_vtype = dyn_cast<VectorType>(input_type)) {
-    input_elements_type = const_vtype.getElementType();
-    input_num_of_elements = const_vtype.getNumElements();
-  } else {
-    op->emitOpError(
-        "input to vectorchain.shuffle should be VectorType or "
-        "IBMVectorFloatType.");
-    return failure();
-  }
+  const auto input_elements_type = dataflow::getElementType(op.getInput().getType());
+  const auto input_num_of_elements = dataflow::getNumElements(op.getInput().getType());
+
   // The element type of the input should match the type of the output (type
   // only, not necessarily number of elements).
-  if (result_type.getElementType() != input_elements_type) {
+  const auto element_type = dataflow::getElementType(getResult().getType());
+  if (element_type != input_elements_type) {
     op->emitOpError(
         "input element type does not match output element "
         "type");

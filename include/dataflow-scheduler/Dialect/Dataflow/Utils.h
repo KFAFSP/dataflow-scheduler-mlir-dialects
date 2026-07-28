@@ -39,6 +39,14 @@ unsigned getIntOrFloatBitWidth(Type type);
 /// Handles VectorType and dataflow::CustomVectorType.
 int64_t getNumElements(Type type);
 
+/// @brief Get the element bitwidth of the vector type \p type.
+/// Handles VectorType and dataflow::CustomVectorType.
+unsigned getElementTypeBitWidth(Type type);
+
+/// @brief Get the element type of \p type.
+/// Handles VectorType, MemRefType, and dataflow::CustomVectorType.
+Type getElementType(Type type);
+
 int getCoreletId(GetUnitOp op);
 
 }  // namespace mlir::dataflow
