@@ -701,11 +701,14 @@ ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
     if (input_vector.location.isValid()) {
       return parser.emitError(parser.getNameLoc())
              << "for composite_store, input_vector and region can't co-exist";
+}
+  } else {
+    region = std::make_unique<Region>();
     }
 
     CompositeStoreOp::ensureTerminator(*region, parser.getBuilder(),
                                        result.location);
-  }
+  result.addRegion(std::move(region));
 
   Type mem_ref_type;
   if (parser.parseColonType(mem_ref_type)) {
