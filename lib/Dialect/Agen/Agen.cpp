@@ -630,6 +630,7 @@ void CompositeLoadOp::build(OpBuilder& builder, OperationState& result,
 
   result.addOperands(memref);
   result.addOperands(map_operands);
+  result.addOperands(time_symbols);
 
   props.dbgName = dbg_name;
   props.load_set = IntegerSetAttr::get(load_set);
