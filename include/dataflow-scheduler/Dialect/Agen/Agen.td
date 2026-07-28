@@ -126,7 +126,7 @@ def Agen_VectorLoadOp : Agen_Op<"vector_load", [
     AffineMapAttr:$load_order,
     Optional<Index>:$multicast_info);
 
-  let results = (outs AnyVectorOfAnyRank:$result);
+  let results = (outs AnyTypeOf<[AnyVectorOfAnyRank, Dataflow_CustomVectorType]>:$result);
 
   let builders = [
     /// Builds an agen vector load op with the specified map and operands.
@@ -139,6 +139,7 @@ def Agen_VectorLoadOp : Agen_Op<"vector_load", [
     }]>
   ];
 
+  let hasVerifier = 1;
   let assemblyFormat = [{
     $mem_ref``custom<AffineMapOfSSAIds>($affine_map, $map_operands)
     (`multicast_info` `=` $multicast_info^)?
@@ -146,9 +147,8 @@ def Agen_VectorLoadOp : Agen_Op<"vector_load", [
   }];
 
   let extraClassDeclaration =  [{
-    [[deprecated("use getResult().getType()")]]
     VectorType getVectorType() {
-      return getResult().getType();
+      return dyn_cast<VectorType>(getResult().getType());
     }
 
     /// Returns the affine map for the agen vector load.
@@ -211,7 +211,7 @@ def Agen_VectorStoreOp : Agen_Op<"vector_store", [
     ```
   }];
   let arguments = (ins
-    AnyVectorOfAnyRank:$value_to_store,
+    AnyTypeOf<[AnyVectorOfAnyRank, Dataflow_CustomVectorType]>:$value_to_store,
     Arg<AnyMemRef, "the reference to store to", [MemWrite]>:$mem_ref,
     OptionalAttr<StrAttr>:$dbgName,
     AffineMapAttr:$affine_map,
@@ -231,15 +231,15 @@ def Agen_VectorStoreOp : Agen_Op<"vector_store", [
         "ValueRange":$indices, "IntegerSet":$store_set, "mlir::AffineMap":$store_order)>
   ];
 
+  let hasVerifier = 1;
   let assemblyFormat = [{
     $value_to_store `,` $mem_ref``custom<AffineMapOfSSAIds>($affine_map, $map_operands)
     attr-dict `:` type($mem_ref) `,` type($value_to_store)
   }];
 
   let extraClassDeclaration =  [{
-    [[deprecated("use getValueToStore().getType()")]]
     VectorType getVectorType() {
-      return getValueToStore().getType();
+      return dyn_cast<VectorType>(getValueToStore().getType());
     }
 
     /// Returns the affine map for then agen vector store.
@@ -490,7 +490,7 @@ def Agen_CompositeStoreOp:Agen_Op<"composite_store", [
     OptionalAttr<StrAttr>:$dbgName,
     AffineMapAttr:$affine_map,
     Variadic<Index>:$map_operands,
-    Optional<AnyVectorOfAnyRank>:$input_vector,
+    Optional<AnyTypeOf<[AnyVectorOfAnyRank, Dataflow_CustomVectorType]>>:$input_vector,
     OptionalAttr<Builtin_IntegerSetAttr>:$store_set,
     OptionalAttr<AffineMapAttr>:$store_order,
     Variadic<Index>:$time_symbols,

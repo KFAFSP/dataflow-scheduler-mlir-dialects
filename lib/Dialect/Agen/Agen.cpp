@@ -102,6 +102,16 @@ void AgenDialect::initialize() {
 // VectorLoadOp
 //===----------------------------------------------------------------------===//
 
+auto VectorLoadOp::verify() -> LogicalResult {
+  if (getAffineMap().getNumInputs() != getMapOperands().size()) {
+    return emitOpError("expected ")
+           << getAffineMap().getNumInputs() << " map operands, but got "
+           << getMapOperands().size();
+  }
+
+  return success();
+}
+
 SmallVector<Operation*> VectorLoadOp::getUseChain() {
   auto& op = *this;
   Operation* curr_op = op;
@@ -151,10 +161,11 @@ void VectorLoadOp::cloneUseChainToNewOp(OpBuilder& builder, Operation* new_op) {
 agen::VectorLoadOp VectorLoadOp::cloneWithNewAccessInfo(
     OpBuilder& builder, const Value mem_view, const AffineMap& subscripts_map,
     ValueRange indices) {
-  return VectorLoadOp::create(builder, getLoc(), getResult().getType(),
-                              mem_view, getDbgNameAttr(), subscripts_map,
-                              indices, getLoadSet(), getLoadOrder(),
-                              getMulticastInfo());
+  return VectorLoadOp::create(
+      builder, getLoc(), getResult().getType(), mem_view,
+      getDbgNameAttr() ? getDbgNameAttr() : builder.getStringAttr(""),
+      subscripts_map, indices, getLoadSet(), getLoadOrder(),
+      getMulticastInfo());
 }
 
 void VectorLoadOp::eraseOpAndUseChain() {
@@ -181,6 +192,16 @@ void VectorStoreOp::build(OpBuilder& builder, OperationState& state,
   build(builder, state, value_to_store, mem_ref, dbg_name,
         builder.getMultiDimIdentityMap(memref_type.getRank()), indices,
         store_set, store_order);
+}
+
+auto VectorStoreOp::verify() -> LogicalResult {
+  if (getAffineMap().getNumInputs() != getMapOperands().size()) {
+    return emitOpError("expected ")
+           << getAffineMap().getNumInputs() << " map operands, but got "
+           << getMapOperands().size();
+  }
+
+  return success();
 }
 
 SmallVector<Operation*> VectorStoreOp::getUseChain() {
@@ -222,9 +243,10 @@ void VectorStoreOp::cloneUseChainToNewOp(OpBuilder& builder,
 VectorStoreOp VectorStoreOp::cloneWithNewAccessInfo(
     OpBuilder& builder, Value mem_view, const AffineMap& subscripts_map,
     ValueRange indices) {
-  return VectorStoreOp::create(builder, getLoc(), getValueToStore(), mem_view,
-                               getDbgNameAttr(), getAffineMap(), indices,
-                               getStoreSet(), getStoreOrder());
+  return VectorStoreOp::create(
+      builder, getLoc(), getValueToStore(), mem_view,
+      getDbgNameAttr() ? getDbgNameAttr() : builder.getStringAttr(""),
+      getAffineMap(), indices, getStoreSet(), getStoreOrder());
 }
 
 void VectorStoreOp::eraseOpAndUseChain() {
@@ -459,7 +481,8 @@ CompositeLoadAndStoreOp CompositeLoadAndStoreOp::cloneWithNewAccessInfo(
     ValueRange src_indices, ValueRange dst_indices,
     const IntegerSet& time_set) {
   auto result = CompositeLoadAndStoreOp::create(
-      builder, getLoc(), src_mem_view, dst_mem_view, getDbgNameAttr(),
+      builder, getLoc(), src_mem_view, dst_mem_view,
+      getDbgNameAttr() ? getDbgNameAttr() : builder.getStringAttr(""),
       src_subscripts_map, src_indices, dst_subscripts_map, dst_indices,
       getLoadSet().getValue(), getLoadOrder(), getStoreSet().getValue(),
       getStoreOrder(), getTimeSymbols(), time_set, getTimeOrder(),
@@ -630,9 +653,11 @@ CompositeLoadOp CompositeLoadOp::cloneWithNewAccessInfo(
     OpBuilder& builder, Value mem_view, const AffineMap& subscripts_map,
     ValueRange indices, const IntegerSet& time_set) {
   auto result = CompositeLoadOp::create(
-      builder, getLoc(), mem_view, getDbgNameAttr(), subscripts_map, indices,
-      getLoadInductionVar().getType(), getLoadSet().getValue(), getLoadOrder(),
-      getTimeSymbols(), time_set, getTimeOrder(), getTimeAddrMap());
+      builder, getLoc(), mem_view,
+      getDbgNameAttr() ? getDbgNameAttr() : builder.getStringAttr(""),
+      subscripts_map, indices, getLoadInductionVar().getType(),
+      getLoadSet().getValue(), getLoadOrder(), getTimeSymbols(), time_set,
+      getTimeOrder(), getTimeAddrMap());
 
   // Delete the yield op automatically inserted to the body. When the original
   // loop body is cloned, the appropriate yield op will also be cloned.
@@ -707,7 +732,7 @@ ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
   }
 
   CompositeStoreOp::ensureTerminator(*region, parser.getBuilder(),
-                                       result.location);
+                                     result.location);
   result.addRegion(std::move(region));
 
   Type mem_ref_type;
@@ -923,7 +948,9 @@ CompositeStoreOp CompositeStoreOp::cloneWithNewAccessInfo(
   //        it did not select the builder to call based on it. It always calls
   //        the following builder, which handles the no input vector case:
   auto result = CompositeStoreOp::create(
-      builder, getLoc(), mem_view, getDbgNameAttr(), subscripts_map, indices,
+      builder, getLoc(), mem_view,
+      getDbgNameAttr() ? getDbgNameAttr() : builder.getStringAttr(""),
+      subscripts_map, indices,
       getStoreSetAttr() ? getStoreSetAttr().getValue() : IntegerSet(nullptr),
       getStoreOrder().value_or(AffineMap(nullptr)), getTimeSymbols(), time_set,
       getTimeOrder(), getTimeAddrMap());
@@ -1369,8 +1396,7 @@ CompositeIndirectLoadAndStoreOp::cloneWithNewAccessInfo(
   auto new_comp_op = CompositeIndirectLoadAndStoreOp::create(
       builder, op->getLoc(), ind_src_mem_view, dir_src_mem_view,
       ind_dst_mem_view, dir_dst_mem_view,
-      getDbgName().has_value() ? builder.getStringAttr(getDbgName().value())
-                               : builder.getStringAttr(""),
+      getDbgNameAttr() ? getDbgNameAttr() : builder.getStringAttr(""),
       ind_src_map, dir_src_map, ind_dst_map, dir_dst_map, operands,
       cast<VectorType>(getLoadInductionVarType()), getLoadSet().getValue(),
       getLoadOrder(), getStoreSet().getValue(), getStoreOrder(), time_set,
