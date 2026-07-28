@@ -310,7 +310,7 @@ def Dataflow_SendOp:Dataflow_Op<"send",
     }];
 
     let arguments = (ins Index:$to_unit,
-                     AnyTypeOf<[AnyVectorOfAnyRank]>:$send_data,
+                     AnyTypeOf<[AnyVectorOfAnyRank, Dataflow_CustomVectorType]>:$send_data,
                      OptionalAttr<DataflowRoutingDirectionAttr>:$dir,
                      OptionalAttr<StrAttr>:$dbgName
                      );
@@ -331,7 +331,7 @@ def Dataflow_ReceiveOp:Dataflow_Op<"receive",
     }];
     let arguments = (ins Index:$from_unit,
                          OptionalAttr<StrAttr>:$dbgName);
-    let results = (outs AnyTypeOf<[AnyVectorOfAnyRank]>:$data);
+    let results = (outs AnyTypeOf<[AnyVectorOfAnyRank, Dataflow_CustomVectorType]>:$data);
 
     let assemblyFormat = [{
          $from_unit attr-dict `:` type(results)
