@@ -109,7 +109,7 @@ def VectorChain_MultiplyOp:VectorChain_Op<"multiply",
     ```
     }];
     let arguments = (ins AnyTypeOf<[Dataflow_CustomVectorType, AnyVectorOfAnyRank]>:$op1,
-                         AnyTypeOf<[Dataflow_CustomVectorType, AnyVectorOfAnyRank]>:$op2, 
+                         AnyTypeOf<[Dataflow_CustomVectorType, AnyVectorOfAnyRank]>:$op2,
                          Optional<AnyVectorOfAnyRank>:$mask,
                          OptionalAttr<StrAttr>:$dbgName, AffineMapAttr:$reduction_map);
     let results = (outs AnyTypeOf<[Dataflow_CustomVectorType, AnyVectorOfAnyRank]>:$data);
@@ -129,17 +129,17 @@ def VectorChain_BinaryOp:VectorChain_Op<"binary",
     lanes of the result participate in the computation.
 
     ```mlir
-    %res = vectorchain.binary %a, %b [%mask]
-        {binary_op = #vectorchain<binary_operator multiply>,
-         op_specific_map = affine_map<(i) -> (i)>}
-        : vector<64xf16>, vector<64xf16>, vector<64xf16>
+        %data = vectorchain.binary"(%op1, %op2) [%mask] {#op_specific_map}
+            : vector<128xi8>, vector<128xi8>, vector<128xi8>
     ```
     }];
-    let arguments = (ins AnyVectorOfAnyRank:$op1, AnyVectorOfAnyRank:$op2, Optional<VectorOfRankAndType<[1], [I1]>>:$mask,
+    let arguments = (ins AnyTypeOf<[Dataflow_CustomVectorType, AnyVectorOfAnyRank]>:$op1,
+                         AnyTypeOf<[Dataflow_CustomVectorType, AnyVectorOfAnyRank]>:$op2,
+                         Optional<AnyVectorOfAnyRank>:$mask,
                          OptionalAttr<StrAttr>:$dbgName,
                          VectorChainBinaryOperatorAttr:$binary_op,
                          AffineMapAttr:$op_specific_map);
-    let results = (outs AnyVectorOfAnyRank:$data);
+    let results = (outs AnyTypeOf<[Dataflow_CustomVectorType, AnyVectorOfAnyRank]>:$data);
     let assemblyFormat = [{
           $op1 `,` $op2  (`[` $mask^ `:` type($mask) `]`)?   attr-dict `:` type($op1) `,` type($op2) `,` type(results)
     }];
@@ -413,7 +413,7 @@ def VectorChain_ConstantBitstreamOp:VectorChain_Op<"constant_bitstream",
     "This operation interprets a constant bit stream as a value with the given vector type.
 
     The value is interpretted as a signed 64 bit integer.
-    
+
     The number of elements of the value attribute should match the number of elements in the
     result vector.
 
@@ -446,13 +446,13 @@ def VectorChain_ShuffleOp:VectorChain_Op<"shuffle",
     ```
     }];
 
-    let arguments = (ins AnyVectorOfAnyRank:$input,
-                         Optional<VectorOfRankAndType<[1], [I1]>>:$mask,
+    let arguments = (ins AnyTypeOf<[Dataflow_CustomVectorType, AnyVectorOfAnyRank]>:$input,
+                         Optional<AnyVectorOfAnyRank>:$mask,
                          OptionalAttr<StrAttr>:$dbgName,
                          ArrayAttr:$indices,
                          I32Attr:$repetition);
 
-    let results = (outs AnyVectorOfAnyRank:$output);
+    let results = (outs AnyTypeOf<[Dataflow_CustomVectorType, AnyVectorOfAnyRank]>:$output);
     let assemblyFormat = [{
           $input (`[` $mask^ `:` type($mask) `]`)?  attr-dict `:` type($input) `,` type(results)
     }];
