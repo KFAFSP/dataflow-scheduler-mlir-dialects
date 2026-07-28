@@ -22,6 +22,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OpDefinition.h>
 
 #include <type_traits>
@@ -50,38 +51,60 @@ static constexpr auto has_dbgName_property_v = has_dbgName_property<T>::value;
 
 namespace mlir::dataflow {
 
-/// Gets the optional debug name of @p op .
+/// Gets the optional debug name attribute of @p op .
 template <class Op>
-auto getDbgName(Op op) -> std::enable_if_t<
-    std::is_base_of_v<detail::DebugNameOpInterfaceTrait<Op>, Op>,
-    std::optional<StringRef>> {
-  if (const auto attr = op.getProperties().dbgName; attr) {
+auto getDbgNameAttr(Op op) -> std::enable_if_t<
+    std::is_base_of_v<detail::DebugNameOpInterfaceTrait<Op>, Op>, StringAttr> {
+  return op.getProperties().dbgName;
+}
+
+/// Gets the optional debug name attribute of @p op .
+///
+/// Falls back to (discardable) attribute manipulation if the op does not
+/// implement the `DebugNameOpInterface`.
+auto getDbgNameAttr(Operation* op) -> StringAttr;
+
+/// Gets the optional debug name of @p op .
+///
+/// Falls back to (discardable) attribute manipulation if the op does not
+/// implement the `DebugNameOpInterface`.
+template <class Op>
+auto getDbgName(Op op) -> std::optional<StringRef> {
+  if (const auto attr = getDbgNameAttr(op); attr) {
     return attr.getValue();
   }
 
   return std::nullopt;
 }
 
-/// Gets the optional debug name of @p op .
-///
-/// Falls back to (discardable) attribute manipulation if the op does not
-/// implement the `DebugNameOpInterface`.
-auto getDbgName(Operation* op) -> std::optional<StringRef>;
-
-/// Sets the optional debug name of @p op to @p name (or removes it).
+/// Sets the optional debug name attribute of @p op to @p name (or removes it).
 template <class Op>
-auto setDbgName(Op op, std::optional<StringRef> name) -> std::enable_if_t<
+auto setDbgNameAttr(Op op, StringAttr name) -> std::enable_if_t<
     std::is_base_of_v<detail::DebugNameOpInterfaceTrait<Op>, Op>, void> {
-  op.getProperties().dbgName =
-      name ? StringAttr::get(op.getContext(), name.value())
-           : StringAttr(nullptr);
+  op.getProperties().dbgName = name;
 }
 
+/// Sets the optional debug name attribute of @p op to @p name (or removes it).
+///
+/// Falls back to (discardable) attribute manipulation if the op does not
+/// implement the `DebugNameOpInterface`.
+void setDbgNameAttr(Operation* op, StringAttr name);
+
 /// Sets the optional debug name of @p op to @p name (or removes it).
 ///
 /// Falls back to (discardable) attribute manipulation if the op does not
 /// implement the `DebugNameOpInterface`.
-void setDbgName(Operation* op, std::optional<StringRef> name);
+template <class Op>
+auto setDbgName(Op op, std::optional<StringRef> name) {
+  MLIRContext* ctx;
+  if constexpr (std::is_pointer_v<Op>) {
+    ctx = op->getContext();
+  } else {
+    ctx = op.getContext();
+  }
+
+  setDbgNameAttr(op, name ? StringAttr::get(ctx, name.value()) : nullptr);
+}
 
 }  // namespace mlir::dataflow
 

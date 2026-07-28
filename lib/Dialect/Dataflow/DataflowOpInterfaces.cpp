@@ -21,29 +21,28 @@
 using namespace mlir;
 using namespace mlir::dataflow;
 
-auto mlir::dataflow::getDbgName(Operation* op) -> std::optional<StringRef> {
+auto mlir::dataflow::getDbgNameAttr(Operation* op) -> StringAttr {
   if (auto iface = dyn_cast<DebugNameOpInterface>(op); iface) {
-    return iface.getDbgName();
+    return iface.getDbgNameAttr();
   }
 
   if (const auto result =
           op->getAttrOfType<StringAttr>(DebugNameOpInterface::kDbgNameAttrName);
       result) {
-    return result.getValue();
+    return result;
   }
 
-  return std::nullopt;
+  return nullptr;
 }
 
-void mlir::dataflow::setDbgName(Operation* op, std::optional<StringRef> name) {
+void mlir::dataflow::setDbgNameAttr(Operation* op, StringAttr name) {
   if (auto iface = dyn_cast<DebugNameOpInterface>(op)) {
-    iface.setDbgName(name);
+    iface.setDbgNameAttr(name);
     return;
   }
 
-  if (name) {
-    op->setAttr(DebugNameOpInterface::kDbgNameAttrName,
-                StringAttr::get(op->getContext(), name.value()));
+  if (name != nullptr) {
+    op->setAttr(DebugNameOpInterface::kDbgNameAttrName, name);
     return;
   }
 
