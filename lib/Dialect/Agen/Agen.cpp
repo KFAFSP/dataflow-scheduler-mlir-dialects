@@ -246,7 +246,7 @@ VectorStoreOp VectorStoreOp::cloneWithNewAccessInfo(
   return VectorStoreOp::create(
       builder, getLoc(), getValueToStore(), mem_view,
       getDbgNameAttr() ? getDbgNameAttr() : builder.getStringAttr(""),
-      getAffineMap(), indices, getStoreSet(), getStoreOrder());
+      subscripts_map, indices, getStoreSet(), getStoreOrder());
 }
 
 void VectorStoreOp::eraseOpAndUseChain() {
