@@ -131,7 +131,7 @@ def Agen_VectorLoadOp : Agen_Op<"vector_load", [
   let builders = [
     /// Builds an agen vector load op with the specified map and operands.
     OpBuilder<(ins
-        "VectorType":$resultType, "Value":$mem_ref, "StringAttr":$dbg_name,
+        "Type":$resultType, "Value":$mem_ref, "StringAttr":$dbg_name,
         "AffineMap":$map, "ValueRange":$map_operands, "IntegerSet":$load_set,
         "AffineMap":$load_order, CArg<"Value", "{}">:$multicast_info), [{
       build($_builder, $_state, resultType, mem_ref, dbg_name, map, map_operands,
@@ -346,7 +346,7 @@ def Agen_CompositeLoadAndStoreOp : Agen_Op<"composite_load_and_store", [
         "ValueRange":$dst_map_operands, "IntegerSetAttr":$load_set, "AffineMapAttr":$load_order,
         "IntegerSetAttr":$store_set, "AffineMapAttr":$store_order, "ValueRange":$time_symbols,
         "IntegerSetAttr":$time_set, "AffineMapAttr":$time_order, "AffineMapAttr":$load_time_addr_map,
-        "AffineMapAttr":$store_time_addr_map, "VectorType":$type,
+        "AffineMapAttr":$store_time_addr_map, "Type":$type,
         CArg<"AgenRoutingDirectionAttr", "nullptr">:$dir,
         CArg<"Value", "{}">:$multicast_info,
         CArg<"function_ref<void(OpBuilder &, Location, Value)>", "nullptr">:$body_builder)>,
@@ -357,7 +357,7 @@ def Agen_CompositeLoadAndStoreOp : Agen_Op<"composite_load_and_store", [
         "ValueRange":$dst_map_operands, "IntegerSet":$load_set, "AffineMap":$load_order,
         "IntegerSet":$store_set, "AffineMap":$store_order, "ValueRange":$time_symbols,
         "IntegerSet":$time_set, "AffineMap":$time_order, "AffineMap":$load_time_addr_map,
-        "AffineMap":$store_time_addr_map, "VectorType":$type,
+        "AffineMap":$store_time_addr_map, "Type":$type,
         CArg<"AgenRoutingDirectionAttr", "nullptr">:$dir,
         CArg<"Value", "{}">:$multicast_info,
         CArg<"function_ref<void(OpBuilder &, Location, Value)>", "nullptr">:$body_builder)>
@@ -440,7 +440,7 @@ def Agen_CompositeLoadOp:Agen_Op<"composite_load", [
     /// Builds a composite load op with the specified map and operands.
     OpBuilder<(ins
       "Value":$mem_ref, "StringAttr":$dbg_name, "AffineMap":$affine_map,
-      "ValueRange":$map_operands, "VectorType":$load_type, "IntegerSet":$load_set,
+      "ValueRange":$map_operands, "Type":$load_type, "IntegerSet":$load_set,
       "AffineMap":$load_order, "ValueRange":$time_symbols, "IntegerSet":$time_set,
       "mlir::AffineMap":$time_order, "mlir::AffineMap":$time_addr_map)>
   ];

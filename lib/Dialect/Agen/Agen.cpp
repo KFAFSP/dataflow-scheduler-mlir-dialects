@@ -378,7 +378,7 @@ void CompositeLoadAndStoreOp::build(
     AffineMapAttr load_order, IntegerSetAttr store_set,
     AffineMapAttr store_order, ValueRange time_symbols, IntegerSetAttr time_set,
     AffineMapAttr time_order, AffineMapAttr load_time_addr_map,
-    AffineMapAttr store_time_addr_map, VectorType type,
+    AffineMapAttr store_time_addr_map, Type type,
     AgenRoutingDirectionAttr dir, Value multicast_info,
     function_ref<void(OpBuilder&, Location, Value)> body_builder) {
   state.addOperands({src_mem_ref, dst_mem_ref});
@@ -428,7 +428,7 @@ void CompositeLoadAndStoreOp::build(
     IntegerSet load_set, AffineMap load_order, IntegerSet store_set,
     AffineMap store_order, ValueRange time_symbols, IntegerSet time_set,
     AffineMap time_order, AffineMap load_time_addr_map,
-    AffineMap store_time_addr_map, VectorType type,
+    AffineMap store_time_addr_map, Type type,
     AgenRoutingDirectionAttr dir, Value multicast_info,
     function_ref<void(OpBuilder&, Location, Value)> body_builder) {
   build(builder, state, src_mem_ref, dst_mem_ref, dbg_name,
@@ -605,7 +605,7 @@ void CompositeLoadOp::print(OpAsmPrinter& p) {
 void CompositeLoadOp::build(OpBuilder& builder, OperationState& result,
                             Value memref, StringAttr dbg_name,
                             AffineMap affine_map, ValueRange map_operands,
-                            VectorType load_type, IntegerSet load_set,
+                            Type load_type, IntegerSet load_set,
                             AffineMap load_order, ValueRange time_symbols,
                             IntegerSet time_set, AffineMap time_order,
                             AffineMap time_addr_map) {
@@ -1399,7 +1399,7 @@ CompositeIndirectLoadAndStoreOp::cloneWithNewAccessInfo(
       ind_dst_mem_view, dir_dst_mem_view,
       getDbgNameAttr() ? getDbgNameAttr() : builder.getStringAttr(""),
       ind_src_map, dir_src_map, ind_dst_map, dir_dst_map, operands,
-      cast<VectorType>(getLoadInductionVarType()), getLoadSet().getValue(),
+      getLoadInductionVarType(), getLoadSet().getValue(),
       getLoadOrder(), getStoreSet().getValue(), getStoreOrder(), time_set,
       getTimeOrder(),
       getLoadIndirectTimeAddrMap().has_value()
