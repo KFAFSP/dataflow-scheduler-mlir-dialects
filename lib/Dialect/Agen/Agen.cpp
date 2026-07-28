@@ -379,7 +379,7 @@ void CompositeLoadAndStoreOp::build(
   props.time_order = time_order;
   props.load_time_addr_map = load_time_addr_map;
   props.store_time_addr_map = store_time_addr_map;
-  props.dbg_name = dbg_name;
+  props.dbgName = dbg_name;
   props.dir = dir;
 
   props.operandSegmentSizes = {1,
@@ -608,7 +608,7 @@ void CompositeLoadOp::build(OpBuilder& builder, OperationState& result,
   result.addOperands(memref);
   result.addOperands(map_operands);
 
-  props.dbg_name = dbg_name;
+  props.dbgName = dbg_name;
   props.load_set = IntegerSetAttr::get(load_set);
   props.affine_map = AffineMapAttr::get(affine_map);
   props.load_order = AffineMapAttr::get(load_order);
@@ -701,12 +701,12 @@ ParseResult CompositeStoreOp::parse(OpAsmParser& parser,
     if (input_vector.location.isValid()) {
       return parser.emitError(parser.getNameLoc())
              << "for composite_store, input_vector and region can't co-exist";
-}
+    }
   } else {
     region = std::make_unique<Region>();
-    }
+  }
 
-    CompositeStoreOp::ensureTerminator(*region, parser.getBuilder(),
+  CompositeStoreOp::ensureTerminator(*region, parser.getBuilder(),
                                        result.location);
   result.addRegion(std::move(region));
 
@@ -840,7 +840,7 @@ void CompositeStoreOp::build(OpBuilder& builder, OperationState& result,
   result.addOperands(map_operands);
   result.addOperands(time_symbols);
 
-  props.dbg_name = dbg_name;
+  props.dbgName = dbg_name;
   props.affine_map = AffineMapAttr::get(map);
   props.store_set = IntegerSetAttr::get(store_set);
   props.store_order = AffineMapAttr::get(store_order);
@@ -889,7 +889,7 @@ void CompositeStoreOp::build(OpBuilder& builder, OperationState& result,
   result.addOperands(input_vector);
   result.addOperands(time_symbols);
 
-  props.dbg_name = dbg_name;
+  props.dbgName = dbg_name;
   props.affine_map = AffineMapAttr::get(map);
   props.time_set = IntegerSetAttr::get(time_set);
   props.time_order = AffineMapAttr::get(time_order);

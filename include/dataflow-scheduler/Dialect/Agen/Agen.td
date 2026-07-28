@@ -119,7 +119,7 @@ def Agen_VectorLoadOp : Agen_Op<"vector_load", [
   }];
   let arguments = (ins
     Arg<AnyMemRef, "the reference to load from", [MemRead]>:$mem_ref,
-    OptionalAttr<StrAttr>:$dbg_name,
+    OptionalAttr<StrAttr>:$dbgName,
     AffineMapAttr:$affine_map,
     Variadic<Index>:$map_operands,
     Builtin_IntegerSetAttr:$load_set,
@@ -213,7 +213,7 @@ def Agen_VectorStoreOp : Agen_Op<"vector_store", [
   let arguments = (ins
     AnyVectorOfAnyRank:$value_to_store,
     Arg<AnyMemRef, "the reference to store to", [MemWrite]>:$mem_ref,
-    OptionalAttr<StrAttr>:$dbg_name,
+    OptionalAttr<StrAttr>:$dbgName,
     AffineMapAttr:$affine_map,
     Variadic<Index>:$map_operands,
     Builtin_IntegerSetAttr:$store_set,
@@ -319,7 +319,7 @@ def Agen_CompositeLoadAndStoreOp : Agen_Op<"composite_load_and_store", [
   let arguments = (ins
     Arg<AnyMemRef, "the reference to load from", [MemRead]>:$src_mem_ref,
     Arg<AnyMemRef, "the reference to store into", [MemWrite]>:$dst_mem_ref,
-    OptionalAttr<StrAttr>:$dbg_name,
+    OptionalAttr<StrAttr>:$dbgName,
     AffineMapAttr:$src_map,
     Variadic<Index>:$src_map_operands,
     AffineMapAttr:$dst_map,
@@ -424,7 +424,7 @@ def Agen_CompositeLoadOp:Agen_Op<"composite_load", [
   let summary = "agen composite load operation";
   let arguments = (ins
     Arg<AnyMemRef, "the reference to load from", [MemRead]>:$mem_ref,
-    OptionalAttr<StrAttr>:$dbg_name,
+    OptionalAttr<StrAttr>:$dbgName,
     AffineMapAttr:$affine_map,
     Variadic<Index>:$map_operands,
     Builtin_IntegerSetAttr:$load_set,
@@ -487,7 +487,7 @@ def Agen_CompositeStoreOp:Agen_Op<"composite_store", [
   let summary = "agen composite store operation";
   let arguments = (ins
     Arg<AnyMemRef, "the reference to store to", [MemWrite]>:$mem_ref,
-    OptionalAttr<StrAttr>:$dbg_name,
+    OptionalAttr<StrAttr>:$dbgName,
     AffineMapAttr:$affine_map,
     Variadic<Index>:$map_operands,
     Optional<AnyVectorOfAnyRank>:$input_vector,
