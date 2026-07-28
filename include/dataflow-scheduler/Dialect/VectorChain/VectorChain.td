@@ -28,6 +28,7 @@ include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
+include "dataflow-scheduler/Dialect/Dataflow/DataflowInterfaces.td"
 include "dataflow-scheduler/Dialect/Dataflow/DataflowTypes.td"
 include "dataflow-scheduler/Dialect/VectorChain/VectorChainEnums.td"
 
@@ -99,7 +100,7 @@ def VectorChain_SelectOp:VectorChain_Op<"select",
 }
 
 def VectorChain_MultiplyOp:VectorChain_Op<"multiply",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Element-wise multiply operation";
     let description = [{
     "This operation performs an element-wise multiply operations and reduce using the reduction map."
@@ -119,7 +120,7 @@ def VectorChain_MultiplyOp:VectorChain_Op<"multiply",
 }
 
 def VectorChain_BinaryOp:VectorChain_Op<"binary",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Element-wise binary operation";
     let description = [{
     Takes two operand vectors, performs the element-wise operation named by the
@@ -146,7 +147,7 @@ def VectorChain_BinaryOp:VectorChain_Op<"binary",
 }
 
 def VectorChain_ElementWiseCompareOp:VectorChain_Op<"element_wise_compare",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Element-wise compare operation";
     let description = [{
     "This operation performs a element-wise compare operation"
@@ -161,7 +162,7 @@ def VectorChain_ElementWiseCompareOp:VectorChain_Op<"element_wise_compare",
 }
 
 def VectorChain_MergeOp:VectorChain_Op<"merge",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Merge operation";
     let description = [{
     "This operation performs a merge between two vectors based on the polyhedral mini-scop representation (where the order doesn't matter)."
@@ -198,7 +199,7 @@ def VectorChain_CreateAffineMaskOp:VectorChain_Op<"create_affine_mask",
 }
 
 def VectorChain_PackOp:VectorChain_Op<"pack",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Pack operation";
     let description = [{
     "This operation packs two vectors into a one based on the array of indices."
@@ -219,7 +220,7 @@ def VectorChain_PackOp:VectorChain_Op<"pack",
 }
 
 def VectorChain_CastOp:VectorChain_Op<"cast",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Cast Operation";
     let description = [{
     "This operation casts a vector of one type to a vector of another."
@@ -234,7 +235,7 @@ def VectorChain_CastOp:VectorChain_Op<"cast",
 }
 
 def VectorChain_FastExpOp:VectorChain_Op<"fast_exp",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Fast Exponent Operation";
     let description = [{
     "This operation computes fast exp auxiliary function."
@@ -248,7 +249,7 @@ def VectorChain_FastExpOp:VectorChain_Op<"fast_exp",
 }
 
 def VectorChain_ExpEstimateOp:VectorChain_Op<"exp_estimate",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Estimate operation";
     let description = [{
     "This operation estimates exp auxiliary function."
@@ -264,7 +265,7 @@ def VectorChain_ExpEstimateOp:VectorChain_Op<"exp_estimate",
 }
 
 def VectorChain_FloorOp:VectorChain_Op<"floor",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Floor operation";
     let description = [{
     "This operation computes the floor function."
@@ -279,7 +280,7 @@ def VectorChain_FloorOp:VectorChain_Op<"floor",
 }
 
 def VectorChain_RecEstimateOp:VectorChain_Op<"rec_estimate",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Estimate operation";
     let description = [{
     "This operation estimates rec auxiliary function."
@@ -294,7 +295,7 @@ def VectorChain_RecEstimateOp:VectorChain_Op<"rec_estimate",
 }
 
 def VectorChain_LnEstimateOp:VectorChain_Op<"ln_estimate",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Estimate operation";
     let description = [{
     "This operation estimates ln auxiliary function."
@@ -309,7 +310,7 @@ def VectorChain_LnEstimateOp:VectorChain_Op<"ln_estimate",
 }
 
 def VectorChain_RsqrtEstimateOp:VectorChain_Op<"rsqrt_estimate",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Estimate operation";
     let description = [{
     "This operation estimates rsqrt auxiliary function."
@@ -324,7 +325,7 @@ def VectorChain_RsqrtEstimateOp:VectorChain_Op<"rsqrt_estimate",
 }
 
 def VectorChain_SigmoidEstimateOp:VectorChain_Op<"sigmoid_estimate",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Estimate operation";
     let description = [{
     "This operation estimates sigmoid auxiliary function."
@@ -340,7 +341,7 @@ def VectorChain_SigmoidEstimateOp:VectorChain_Op<"sigmoid_estimate",
 }
 
 def VectorChain_TanhEstimateOp:VectorChain_Op<"tanh_estimate",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Estimate operation";
     let description = [{
     "This operation estimates tanh auxiliary function."
@@ -356,7 +357,7 @@ def VectorChain_TanhEstimateOp:VectorChain_Op<"tanh_estimate",
 }
 
 def VectorChain_NegOp:VectorChain_Op<"neg",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Negation operation";
     let description = [{
     "This operation negates the input SSA variable."
@@ -372,7 +373,7 @@ def VectorChain_NegOp:VectorChain_Op<"neg",
 }
 
 def VectorChain_MultiplyAndAccumulateOp:VectorChain_Op<"multiply_and_accumulate",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Multiply and accumulate operation";
     let description = [{
     "This operation performs a mac operations -- op1 x op2 + op3 with reduction map."
@@ -392,7 +393,7 @@ def VectorChain_MultiplyAndAccumulateOp:VectorChain_Op<"multiply_and_accumulate"
 }
 
 def VectorChain_ElementWiseSelectionOp:VectorChain_Op<"element_wise_selection",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Element wise selection";
     let description = [{
     "This operation performs a element-wise selection b/w lhs and rhs operands based on the condition."
@@ -430,7 +431,7 @@ def VectorChain_ConstantBitstreamOp:VectorChain_Op<"constant_bitstream",
 }
 
 def VectorChain_ShuffleOp:VectorChain_Op<"shuffle",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Shuffle operation";
     let description = [{
     Constructs a vector by shuffling/selecting the elements of an input vector.
@@ -461,7 +462,7 @@ def VectorChain_ShuffleOp:VectorChain_Op<"shuffle",
 }
 
 def VectorChain_ScanWithGapOp:VectorChain_Op<"scan_with_gap",
-  [NoMemoryEffect, IsolatedFromAbove]> {
+  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
     let summary = "Scan (reduction) operation with gap";
     let description = [{
     "This operation performs reduction using the given binary operation
@@ -485,8 +486,10 @@ def VectorChain_ScanWithGapOp:VectorChain_Op<"scan_with_gap",
     }];
 }
 
-def VectorChain_RotateOp:VectorChain_Op<"rotate",
-                                           [NoMemoryEffect, IsolatedFromAbove]> {
+def VectorChain_RotateOp:VectorChain_Op<"rotate", [
+        NoMemoryEffect,
+        IsolatedFromAbove,
+        Dataflow_DebugNameOpInterface]> {
     let summary = "Rotation operation";
     let description = [{
         "This operation rotates the elements of a vector from a given location either left

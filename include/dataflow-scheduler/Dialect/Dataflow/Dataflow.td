@@ -25,6 +25,7 @@
 
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
+include "dataflow-scheduler/Dialect/Dataflow/DataflowInterfaces.td"
 include "dataflow-scheduler/Dialect/Dataflow/DataflowTypes.td"
 
 // Base class for KTDF dialect operations
@@ -183,7 +184,7 @@ def Dataflow_CreateMulticastGroupOp:Dataflow_Op<"create_multicast_group",
 }
 
 def Dataflow_SyncSendOp:Dataflow_Op<"sync_send",
-  []> {
+  [Dataflow_DebugNameOpInterface]> {
     let summary = "Send synchronization signal for explicit synchronization";
     let description = [{
     Sends a synchronization signal to another unit, used for explicit
@@ -203,7 +204,7 @@ def Dataflow_SyncSendOp:Dataflow_Op<"sync_send",
 }
 
 def Dataflow_SyncRecvOp:Dataflow_Op<"sync_recv",
-  []> {
+  [Dataflow_DebugNameOpInterface]> {
     let summary = "Receive synchronization signal for explicit synchronization";
     let description = [{
     Receives a synchronization signal from another unit, used for explicit
@@ -222,7 +223,7 @@ def Dataflow_SyncRecvOp:Dataflow_Op<"sync_recv",
 }
 
 def Dataflow_ImplicitSyncOnStreamingBufferOp:Dataflow_Op<"implicit_sync_on_streaming_buffer",
-                                      []> {
+                                      [Dataflow_DebugNameOpInterface]> {
     let summary = "Performs sync send/recv operations at the buffer granularity level";
     let description = [{
       "This operation is meant to enable synchronization implicitly at the boundary of streaming buffer."
@@ -298,7 +299,7 @@ def Dataflow_GetPagedLogicalMemoryViewOp:Dataflow_Op<"get_paged_logical_memory_v
 }
 
 def Dataflow_SendOp:Dataflow_Op<"send",
-  []> {
+  [Dataflow_DebugNameOpInterface]> {
     let summary = "Send a vector of data to another unit";
     let description = [{
     Sends a vector of data to another unit. The optional `dir` attribute records
@@ -320,7 +321,7 @@ def Dataflow_SendOp:Dataflow_Op<"send",
 }
 
 def Dataflow_ReceiveOp:Dataflow_Op<"receive",
-  []> {
+  [Dataflow_DebugNameOpInterface]> {
     let summary = "Receive a vector of data from another unit";
     let description = [{
     Receives a vector of data from another unit and returns it as the result.
@@ -339,7 +340,7 @@ def Dataflow_ReceiveOp:Dataflow_Op<"receive",
 }
 
 def Dataflow_OpaqueOp:Dataflow_Op<"opaque",
-  []> {
+  [Dataflow_DebugNameOpInterface]> {
     let summary = "Opaque operation";
     let description = [{
       "Opaque operation for auxiliary functions."

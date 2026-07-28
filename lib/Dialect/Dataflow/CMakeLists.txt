@@ -2,6 +2,7 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsDataflowDialect
     DataflowAttributes.cpp
     DataflowDialect.cpp
     DataflowEnums.cpp
+    DataflowOpInterfaces.cpp
     DataflowOps.cpp
     DataflowTypes.cpp
     Utils.cpp

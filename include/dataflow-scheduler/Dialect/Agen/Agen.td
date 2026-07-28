@@ -31,6 +31,7 @@ include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 include "dataflow-scheduler/Dialect/Agen/AgenEnums.td"
+include "dataflow-scheduler/Dialect/Dataflow/DataflowInterfaces.td"
 include "dataflow-scheduler/Dialect/Dataflow/DataflowTypes.td"
 
 //===----------------------------------------------------------------------===//
@@ -93,7 +94,8 @@ def Agen_VectorLoadOp : Agen_Op<"vector_load", [
     DeclareOpInterfaceMethods<AffineReadOpInterface>,
     DeclareOpInterfaceMethods<AffineMapAccessInterface>,
     MemRefsNormalizable,
-    AttrSizedOperandSegments]> {
+    AttrSizedOperandSegments,
+    Dataflow_DebugNameOpInterface]> {
   let summary = "agen vector load operation";
   let description = [{
     Loads a vector of data from a memory view (typically produced by
@@ -186,7 +188,8 @@ def Agen_VectorLoadOp : Agen_Op<"vector_load", [
 def Agen_VectorStoreOp : Agen_Op<"vector_store", [
     DeclareOpInterfaceMethods<AffineWriteOpInterface>,
     DeclareOpInterfaceMethods<AffineMapAccessInterface>,
-    MemRefsNormalizable]> {
+    MemRefsNormalizable,
+    Dataflow_DebugNameOpInterface]> {
   let summary = "agen vector store operation";
   let description = [{
     Stores a vector of data into a memory view (typically produced by
@@ -279,7 +282,8 @@ def Agen_CompositeLoadAndStoreOp : Agen_Op<"composite_load_and_store", [
     MemRefsNormalizable,
     ImplicitAgenTerminator,
     DeclareOpInterfaceMethods<AffineMapAccessInterface, ["getAffineMapAttrForMemRef"]>,
-    AttrSizedOperandSegments]> {
+    AttrSizedOperandSegments,
+    Dataflow_DebugNameOpInterface]> {
   let summary = "agen composite load_and_store operation";
   let description = [{
     Captures a sequence of individual vector loads and stores: at each time
@@ -420,7 +424,8 @@ def Agen_CompositeLoadOp:Agen_Op<"composite_load", [
     DeclareOpInterfaceMethods<AffineMapAccessInterface>,
     MemRefsNormalizable,
     ImplicitAgenTerminator,
-    AttrSizedOperandSegments]> {
+    AttrSizedOperandSegments,
+    Dataflow_DebugNameOpInterface]> {
   let summary = "agen composite load operation";
   let arguments = (ins
     Arg<AnyMemRef, "the reference to load from", [MemRead]>:$mem_ref,
@@ -483,7 +488,8 @@ def Agen_CompositeStoreOp:Agen_Op<"composite_store", [
     DeclareOpInterfaceMethods<AffineMapAccessInterface>,
     MemRefsNormalizable,
     ImplicitAgenTerminator,
-    AttrSizedOperandSegments]> {
+    AttrSizedOperandSegments,
+    Dataflow_DebugNameOpInterface]> {
   let summary = "agen composite store operation";
   let arguments = (ins
     Arg<AnyMemRef, "the reference to store to", [MemWrite]>:$mem_ref,
@@ -552,7 +558,8 @@ def Agen_CompositeStoreOp:Agen_Op<"composite_store", [
 def Agen_CompositeIndirectLoadAndStoreOp:Agen_Op<"composite_indirect_load_and_store",
         [MemRefsNormalizable,
         ImplicitAgenTerminator,
-        AttrSizedOperandSegments]> {
+        AttrSizedOperandSegments,
+        Dataflow_DebugNameOpInterface]> {
   // TODO:
   // The `AffineMapAccessInterface` trait (and its uses in MLIR) expect a single
   // dereferenceable memref, whereas this operations dereferences upto four memrefs.
@@ -670,7 +677,8 @@ def Agen_CompositeIndirectLoadAndStoreOp:Agen_Op<"composite_indirect_load_and_st
 def Agen_CompositeIndirectLoadOp:Agen_Op<"composite_indirect_load",
         [MemRefsNormalizable,
         ImplicitAgenTerminator,
-        AttrSizedOperandSegments]> {
+        AttrSizedOperandSegments,
+        Dataflow_DebugNameOpInterface]> {
   // TODO:
   // The `AffineMapAccessInterface` trait (and its uses in MLIR) expect a single
   // dereferenceable memref, whereas this operations dereferences two memrefs.
@@ -750,7 +758,8 @@ def Agen_CompositeIndirectLoadOp:Agen_Op<"composite_indirect_load",
 def Agen_CompositeIndirectStoreOp:Agen_Op<"composite_indirect_store",
         [MemRefsNormalizable,
         ImplicitAgenTerminator,
-        AttrSizedOperandSegments]> {
+        AttrSizedOperandSegments,
+        Dataflow_DebugNameOpInterface]> {
   // TODO:
   // The `AffineMapAccessInterface` trait (and its uses in MLIR) expect a single
   // dereferenceable memref, whereas this operations dereferences two memrefs.
@@ -829,7 +838,8 @@ def Agen_CompositeIndirectStoreOp:Agen_Op<"composite_indirect_store",
 def Agen_IndirectVectorLoadOp:Agen_Op<"indirect_vector_load",
         [MemRefsNormalizable,
         ImplicitAgenTerminator,
-        AttrSizedOperandSegments]> {
+        AttrSizedOperandSegments,
+        Dataflow_DebugNameOpInterface]> {
   // TODO:
   // The `AffineMapAccessInterface` trait (and its uses in MLIR) expect a single
   // dereferenceable memref, whereas this operations dereferences two memrefs.
@@ -901,7 +911,8 @@ def Agen_IndirectVectorLoadOp:Agen_Op<"indirect_vector_load",
 def Agen_IndirectVectorStoreOp:Agen_Op<"indirect_vector_store",
         [MemRefsNormalizable,
         ImplicitAgenTerminator,
-        AttrSizedOperandSegments]> {
+        AttrSizedOperandSegments,
+        Dataflow_DebugNameOpInterface]> {
   // TODO:
   // The `AffineMapAccessInterface` trait (and its uses in MLIR) expect a single
   // dereferenceable memref, whereas this operations dereferences two memrefs.
@@ -969,7 +980,7 @@ def Agen_IndirectVectorStoreOp:Agen_Op<"indirect_vector_store",
 }
 
 def Agen_CompositeMemoryInterleaveOp:Agen_Op<"composite_memory_interleave",
-    [ImplicitAgenTerminator]> {
+    [ImplicitAgenTerminator, Dataflow_DebugNameOpInterface]> {
   let summary = "agen composite memory interleaving operation";
   let description = [{
     The composite_memory_interleave operation interleaves the composite memory
@@ -1027,7 +1038,9 @@ def Agen_CompositeMemoryInterleaveOp:Agen_Op<"composite_memory_interleave",
   ];
 }
 
-def Agen_SetTransferMaskStateOp:Agen_Op<"set_transfer_mask_state", [MemoryEffects<[MemWrite]>]> {
+def Agen_SetTransferMaskStateOp:Agen_Op<"set_transfer_mask_state", [
+    MemoryEffects<[MemWrite]>,
+    Dataflow_DebugNameOpInterface]> {
 
   let summary = "agen set transfer mask state operation";
   let description = [{
@@ -1104,7 +1117,7 @@ def Agen_SetTransferMaskStateOp:Agen_Op<"set_transfer_mask_state", [MemoryEffect
 
 // TODO: Check if any additional traits are required.
 def Agen_SymbolicVectorLoadOp:Agen_Op<"symbolic_vector_load",
-[MemRefsNormalizable]> {
+[MemRefsNormalizable, Dataflow_DebugNameOpInterface]> {
 
   let summary = "agen symbolic vector load operation";
   let arguments = (ins Arg<AnyMemRef, "the reference to load from",
@@ -1162,7 +1175,7 @@ def Agen_SymbolicVectorLoadOp:Agen_Op<"symbolic_vector_load",
 }
 
 def Agen_SymbolicVectorStoreOp : Agen_Op<"symbolic_vector_store",
-[MemRefsNormalizable]> {
+[MemRefsNormalizable, Dataflow_DebugNameOpInterface]> {
 
   let summary = "agen symbolic vector store operation";
   let arguments = (ins AnyType:$value_to_store,

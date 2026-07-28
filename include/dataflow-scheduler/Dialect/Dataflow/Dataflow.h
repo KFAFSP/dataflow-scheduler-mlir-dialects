@@ -28,6 +28,7 @@
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
+#include "dataflow-scheduler/Dialect/Dataflow/DataflowInterfaces.h" // IWYU pragma: keep
 #include "dataflow-scheduler/Dialect/Dataflow/DataflowTypes.h"  // IWYU pragma: keep
 
 /// Auto-generated includes.
