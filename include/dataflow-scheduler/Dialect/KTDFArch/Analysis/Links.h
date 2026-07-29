@@ -128,6 +128,7 @@ template <class Callback>
   using link_type = typename traits::template arg_t<0>;
 
   constexpr auto make_invoke = [](auto&& callback) {
+    static_assert(traits::num_args >= 1 && traits::num_args <= 2);
     if constexpr (traits::num_args == 1) {
       return [callback = std::forward<decltype(callback)>(callback)](
                  link_type link, LinkDirection /*direction*/) -> bool {
@@ -138,7 +139,7 @@ template <class Callback>
           return callback(link);
         }
       };
-    } else if constexpr (traits::num_args == 2) {
+    } else /*if constexpr (traits::num_args == 2)*/ {
       using direction_type = typename traits::template arg_t<1>;
       static_assert(std::is_convertible_v<LinkDirection, direction_type>);
       return [callback = std::forward<decltype(callback)>(callback)](
@@ -150,8 +151,6 @@ template <class Callback>
           return callback(link, direction);
         }
       };
-    } else {
-      static_assert(false);
     }
   };
 
