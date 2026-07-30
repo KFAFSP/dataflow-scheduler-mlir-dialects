@@ -1,4 +1,4 @@
-//===-- Links.cpp -----------------------------------------------*- c++ -*-===//
+//===-- NodeLinks.cpp -------------------------------------------*- c++ -*-===//
 //
 // Part of the Dataflow Scheduler MLIR Dialects project.
 //
@@ -16,52 +16,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "dataflow-scheduler/Dialect/KTDFArch/Analysis/Links.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/Analysis/NodeLinks.h"
+
+#include <llvm/Support/ErrorHandling.h>
+
+#include "dataflow-scheduler/Dialect/KTDFArch/Analysis/NodeEndpoints.h"
 
 using namespace mlir;
 using namespace mlir::ktdf_arch;
-
-//===----------------------------------------------------------------------===//
-// Endpoints
-//===----------------------------------------------------------------------===//
-
-auto mlir::ktdf_arch::getEndpoint(Value value) -> Endpoint {
-  while (true) {
-    // If the value is an argument to a GroupOp body, it is a shared memory, and
-    // we need to find the endpoint that defines the capture operand.
-    if (auto arg = dyn_cast<BlockArgument>(value); arg) {
-      auto group = dyn_cast<GroupOp>(arg.getOwner()->getParentOp());
-      if (!group) {
-        break;
-      }
-
-      value = group->getOperand(arg.getArgNumber());
-      continue;
-    }
-
-    // If the value is a result of a GroupOp, it is a shared execution unit, and
-    // we need to find the endpoint that defines the yield operand.
-    if (auto result = dyn_cast<OpResult>(value); result) {
-      if (auto group = dyn_cast<GroupOp>(result.getOwner()); group) {
-        value = group.getBody()->getTerminator()->getOperand(
-            result.getResultNumber());
-        continue;
-      }
-
-      if (isa<Resource>(result.getOwner())) {
-        return cast<Endpoint>(result);
-      }
-    }
-
-    break;
-  }
-
-  return nullptr;
-}
-
-//===----------------------------------------------------------------------===//
-// Links
-//===----------------------------------------------------------------------===//
 
 namespace {
 
@@ -125,4 +87,29 @@ auto mlir::ktdf_arch::detail::visitLinks(
     Endpoint endpoint, function_ref<bool(Link, LinkDirection)> callback)
     -> bool {
   return visitLinksImpl(endpoint, callback);
+}
+
+//===----------------------------------------------------------------------===//
+// LinkCollection
+//===----------------------------------------------------------------------===//
+
+LinkCollection::LinkCollection(Node node) {
+  for (auto result : node->getResults()) {
+    visitLinksImpl(result, [&](Link link, LinkDirection direction) -> bool {
+      switch (direction) {
+        case LinkDirection::Incoming:
+          links_.insert(links_.begin(), link);
+          ++num_in_only_;
+          break;
+        case LinkDirection::Outgoing:
+          links_.push_back(link);
+          ++num_out_only_;
+          break;
+        case LinkDirection::Bidirectional:
+          links_.insert(links_.end() - num_out_only_, link);
+          break;
+      }
+      return true;
+    });
+  }
 }

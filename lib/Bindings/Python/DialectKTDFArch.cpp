@@ -29,6 +29,9 @@
 #include <optional>
 
 #include "Utils.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/Analysis/DeviceManager.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/Analysis/NodeEndpoints.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/Analysis/NodeLinks.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchDialect.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchInterfaces.h"
@@ -172,6 +175,17 @@ struct PyResource : ktir::PyConcreteOpInterface<PyResource> {
   }
 };
 
+struct PyNode : ktir::PyConcreteOpInterface<PyNode> {
+  static auto getInterfaceID() -> MlirTypeID {
+    return wrap(mlir::ktdf_arch::Node::getInterfaceID());
+  }
+  static constexpr const char* pyClassName = "Node";
+
+  using ktir::PyConcreteOpInterface<PyNode>::PyConcreteOpInterface;
+
+  static void bindDerived(ClassTy& /*c*/) {}
+};
+
 struct PyLink : ktir::PyConcreteOpInterface<PyLink> {
   static auto getInterfaceID() -> MlirTypeID {
     return wrap(mlir::ktdf_arch::Link::getInterfaceID());
@@ -225,6 +239,7 @@ NB_MODULE(_dataflow_scheduler_dialects_ktdf_arch, m) {
   PyMapAttr::bind(m);
 
   PyResource::bind(m);
+  PyNode::bind(m);
   PyLink::bind(m);
 
   nb::class_<mlir::ktdf_arch::Feature>(m, "Feature")
@@ -299,4 +314,110 @@ NB_MODULE(_dataflow_scheduler_dialects_ktdf_arch, m) {
         return mlir::ktdf_arch::getFeature(unwrap(op.get()), feature);
       },
       nb::arg("op"), nb::arg("name"));
+
+  m.def(
+      "get_endpoint",
+      [](MlirValue value) -> std::optional<MlirValue> {
+        if (const auto endpoint = mlir::ktdf_arch::getEndpoint(unwrap(value));
+            endpoint) {
+          return wrap(endpoint);
+        }
+        return std::nullopt;
+      },
+      nb::arg("value"));
+
+  m.def(
+      "get_node",
+      [](MlirValue value) -> std::optional<PyNode> {
+        if (const auto node = mlir::ktdf_arch::getNode(unwrap(value)); node) {
+          auto op = PyOperation::forOperation(
+              PyMlirContext::forContext(mlirValueGetContext(value)),
+              wrap(node));
+          return PyNode(op->createOpView(),
+                        DefaultingPyMlirContext(*op->getContext().get()));
+        }
+        return std::nullopt;
+      },
+      nb::arg("value"));
+
+  nb::enum_<mlir::ktdf_arch::LinkDirection>(m, "LinkDirection")
+      .value("IN", mlir::ktdf_arch::LinkDirection::Incoming)
+      .value("OUT", mlir::ktdf_arch::LinkDirection::Outgoing)
+      .value("BIDI", mlir::ktdf_arch::LinkDirection::Bidirectional)
+      .def("__or__",
+           [](mlir::ktdf_arch::LinkDirection lhs,
+              mlir::ktdf_arch::LinkDirection rhs) { return lhs | rhs; })
+      .def("__and__",
+           [](mlir::ktdf_arch::LinkDirection lhs,
+              mlir::ktdf_arch::LinkDirection rhs) { return lhs & rhs; })
+      .def("__xor__",
+           [](mlir::ktdf_arch::LinkDirection lhs,
+              mlir::ktdf_arch::LinkDirection rhs) { return lhs ^ rhs; })
+      .def("__invert__",
+           [](mlir::ktdf_arch::LinkDirection self) { return ~self; });
+
+  m.def(
+      "visit_links",
+      [](PyNode node,
+         nb::typed<nb::callable, bool(PyLink, mlir::ktdf_arch::LinkDirection)>
+             visit) -> bool {
+        auto iface = cast<mlir::ktdf_arch::Node>(
+            unwrap(nb::cast<PyOperation*>(node.getOperationObject())->get()));
+
+        return mlir::ktdf_arch::visitLinks(
+            iface,
+            [&](mlir::ktdf_arch::Link link,
+                mlir::ktdf_arch::LinkDirection direction) -> bool {
+              auto op = PyOperation::forOperation(
+                  PyMlirContext::forContext(wrap(link->getContext())),
+                  wrap(link));
+              return nb::cast<bool>(visit(
+                  PyLink(op->createOpView(),
+                         DefaultingPyMlirContext(*op->getContext().get())),
+                  direction));
+            });
+      },
+      nb::arg("node"), nb::arg("visit"));
+
+  nb::class_<mlir::ktdf_arch::Device>(m, "Device")
+      .def(
+          "__init__",
+          [](mlir::ktdf_arch::Device* self, MlirOperation op) {
+            auto decl = dyn_cast<mlir::ktdf_arch::DeviceOp>(unwrap(op));
+            if (!decl) {
+              throw nanobind::value_error(
+                  Twine("expected '")
+                      .concat(mlir::ktdf_arch::DeviceOp::getOperationName())
+                      .concat("' op")
+                      .str()
+                      .c_str());
+            }
+
+            new (self) mlir::ktdf_arch::Device(decl);
+
+            if (!*self) {
+              throw MLIRError("unable to import device");
+            }
+          },
+          nb::arg("op"))
+      .def_prop_ro(
+          "declaration",
+          [](const mlir::ktdf_arch::Device& device) {
+            return PyOperation::forOperation(
+                       PyMlirContext::forContext(wrap(device.getContext())),
+                       wrap(device.getDeclaration()))
+                ->createOpView();
+          },
+          nb::sig("def (self: Device, /) -> " MAKE_MLIR_PYTHON_QUALNAME(
+              "dialects.ktdf_arch.DeviceOp")))
+      .def_prop_ro(
+          "definition",
+          [](const mlir::ktdf_arch::Device& device) {
+            return PyOperation::forOperation(
+                       PyMlirContext::forContext(wrap(device.getContext())),
+                       wrap(device.getDefinition()))
+                ->createOpView();
+          },
+          nb::sig("def (self: Device, /) -> " MAKE_MLIR_PYTHON_QUALNAME(
+              "dialects.ktdf_arch.DeviceOp")));
 }

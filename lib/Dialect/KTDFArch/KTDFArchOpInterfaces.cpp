@@ -22,7 +22,6 @@
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Value.h>
 
-#include <iterator>
 #include <optional>
 
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"

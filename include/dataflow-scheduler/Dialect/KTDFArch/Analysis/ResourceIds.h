@@ -29,20 +29,38 @@
 namespace mlir::ktdf_arch {
 
 /// Analysis that manages the device-unique identifiers of resources.
+///
+/// Similar to the SymbolTableAnalysis, this analysis tracks the IDs of
+/// resources in a device and provides a mechanism for updating them. It is the
+/// user's responsibility to ensure that the IR mutations associated with the
+/// reassignment of resource IDs are legal.
+///
+/// In general, assigning an ID to a resource that does not have one can not
+/// lead to illegal IR (as long as the ID is unique). This special case is
+/// supported with the infallible `getOrAssign` method, which is useful for
+/// passes that need IDs to be able to store resource references in the IR.
 class ResourceIds : public DeviceView {
   using map_type = DenseMap<StringAttr, Resource>;
 
  public:
-  /// Creates a ResourceLookup for the device declared by @p declaration .
+  /// Creates the ResourceIds for the device declared by @p declaration .
   explicit ResourceIds(DeviceOp declaration, AnalysisManager& analyses);
 
   /// Obtains the resource with @p id , if it exists.
-  [[nodiscard]] auto lookup(StringAttr id) -> Resource {
+  [[nodiscard]] auto lookup(StringAttr id) const -> Resource {
     return map_.lookup(id);
   }
   /// @copydoc lookup(StringAttr)
-  [[nodiscard]] auto lookup(StringRef id) -> Resource {
+  [[nodiscard]] auto operator[](StringAttr id) const -> Resource {
+    return lookup(id);
+  }
+  /// @copydoc lookup(StringAttr)
+  [[nodiscard]] auto lookup(StringRef id) const -> Resource {
     return lookup(StringAttr::get(getContext(), id));
+  }
+  /// @copydoc lookup(StringRef)
+  [[nodiscard]] auto operator[](StringRef id) const -> Resource {
+    return lookup(id);
   }
 
   /// Assigns @p id to @p resource if possible.

@@ -143,6 +143,7 @@ declare_mlir_python_extension(DataflowSchedulerDialectsPythonExtensions.Dialects
     DialectKTDFArch.cpp
   EMBED_CAPI_LINK_LIBS
     DataflowSchedulerDialects::KTDFArchDialect
+    DataflowSchedulerDialects::KTDFArchAnalysis
   PRIVATE_LINK_LIBS
     LLVMSupport
 )

@@ -102,6 +102,14 @@ with ctx:
     memory_res.id = new_memory_id
     assert memory.id == new_memory_id
 
+    # Node
+    assert ktdf_arch.Node(memory)
+    try:
+        ktdf_arch.Node(datapath)
+        assert False
+    except ValueError:
+        pass
+
     # Link
     assert exec_unit is not None
     assert datapath is not None
@@ -133,3 +141,31 @@ with ctx:
     )
     assert queue_feature is not None
     assert ktdf_arch.get_feature(datapath.operation, queue_feature) == queue_feature
+
+    # get_endpoint
+    assert ktdf_arch.get_endpoint(datapath.source) == memory.result
+
+    # get_node
+    source_node = ktdf_arch.get_node(datapath.source)
+    assert source_node is not None
+    assert source_node.operation == memory_res.operation
+
+    # visit_links
+    def get_links(
+        node: ktdf_arch.Node,
+    ) -> list[tuple[ktdf_arch.Link, ktdf_arch.LinkDirection]]:
+        result = []
+        ktdf_arch.visit_links(
+            node, lambda link, dir: result.append((link, dir)) or True
+        )
+        return result
+
+    links = get_links(source_node)
+    assert len(links) == 1
+    assert links[0][0].operation == datapath.operation
+    assert (links[0][1] & ktdf_arch.LinkDirection.OUT) == ktdf_arch.LinkDirection.OUT
+
+    # Device
+    device = ktdf_arch.Device(module.body.operations[0].operation)
+    assert device.declaration == module.body.operations[0].operation
+    assert device.definition == device.declaration
