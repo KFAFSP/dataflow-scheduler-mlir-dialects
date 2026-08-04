@@ -431,34 +431,85 @@ def VectorChain_ConstantBitstreamOp:VectorChain_Op<"constant_bitstream",
 }
 
 def VectorChain_ShuffleOp:VectorChain_Op<"shuffle",
-  [NoMemoryEffect, IsolatedFromAbove, Dataflow_DebugNameOpInterface]> {
+  [NoMemoryEffect, IsolatedFromAbove, AttrSizedOperandSegments,
+   Dataflow_DebugNameOpInterface]> {
     let summary = "Shuffle operation";
     let description = [{
-    Constructs a vector by shuffling/selecting the elements of an input vector.
+    "This operation shuffles the elements of a vector based on the array of indices.
 
     Each element of `indices` refers to an element of the input vector. The
     `indices` pattern is repeated `repetition` times, so the product of the
-    number of `indices` and `repetition` must equal the number of elements in
-    the output vector. An index value of -1 indicates a padding element.
+    number of `indices` and `repetitions` must match the number of elements in
+    the output.
 
-    ```mlir
-    %splat = vectorchain.shuffle %data {indices = [0, 1], repetition = 64 : i32}
-        : vector<2xi8>, vector<128xi8>
-    ```
+    Negative values indicate indices of the variable and pad operands, starting at -1.
+
+    Examples:
+      %0 = vectorchain.shuffle input(%inp), variable(%arg0, %arg1, %arg2), pad(%c0)
+               { indices: [-1 : i32, -2 : i32, -3 : i32, -4 : i32], repetition = 16 : i32 } :
+               vector<64xf16>, vector<3xindex>, index, vector<64xf16>
+
+      %0 = vectorchain.shuffle input(%inp), pad(%c0, %c1)
+               { indices: [0 : i32, 1 : i32, -1 : i32, -2 : i32], repetition = 16 : i32 } :
+               vector<64xf16>, index, index, vector<64xf16>
+    "
     }];
 
     let arguments = (ins AnyTypeOf<[Dataflow_CustomVectorType, AnyVectorOfAnyRank]>:$input,
+                         Variadic<AnyTypeOf<[Index, AnyInteger, AnyFloat]>>:$variable,
+                         Variadic<AnyTypeOf<[Index, AnyInteger, AnyFloat]>>:$pad,
                          Optional<AnyVectorOfAnyRank>:$mask,
                          OptionalAttr<StrAttr>:$dbgName,
                          ArrayAttr:$indices,
                          I32Attr:$repetition);
 
     let results = (outs AnyTypeOf<[Dataflow_CustomVectorType, AnyVectorOfAnyRank]>:$output);
-    let assemblyFormat = [{
-          $input (`[` $mask^ `:` type($mask) `]`)?  attr-dict `:` type($input) `,` type(results)
-    }];
-
+    let hasCustomAssemblyFormat = 1;
     let hasVerifier = 1;
+
+    let builders = [
+      OpBuilder<(ins "Type":$resultType, "Value":$input, "ValueRange":$variable,
+                     "ValueRange":$pad, "Value":$mask, "ArrayAttr":$indices,
+                     "IntegerAttr":$repetition, "StringAttr":$dbgName)>,
+      OpBuilder<(ins "Type":$resultType, "Value":$input, "ArrayAttr":$indices,
+                     "IntegerAttr":$repetition, "StringAttr":$dbgName)>,
+      OpBuilder<(ins "Type":$resultType, "Value":$input, "Value":$mask,
+                     "ArrayAttr":$indices, "IntegerAttr":$repetition,
+                     "StringAttr":$dbgName)>,
+      OpBuilder<(ins "Type":$resultType, "Value":$input, "ValueRange":$variable,
+                     "ValueRange":$pad, "ArrayAttr":$indices,
+                     "IntegerAttr":$repetition, "StringAttr":$dbgName)>
+    ];
+
+    let extraClassDeclaration = [{
+      std::optional<int64_t> getFirstVariableIndex() {
+        if (getVariable().empty())
+          return std::nullopt;
+        return -1;
+      }
+
+      std::optional<int64_t> getFirstPadIndex() {
+        if (getPad().empty())
+          return std::nullopt;
+        if (!getVariable().empty())
+          return -static_cast<int64_t>(getVariable().size()) - 1;
+        return -1;
+      }
+
+      Value getVariableOrPadOperand(int64_t index) {
+        auto variable = getVariable();
+        auto pad = getPad();
+        auto operand_offset = -index - 1;
+        auto total_operands = variable.size() + pad.size();
+
+        assert(index < 0 &&
+               static_cast<size_t>(operand_offset) < total_operands);
+
+        if (static_cast<size_t>(operand_offset) < variable.size())
+          return variable[operand_offset];
+        return pad[operand_offset - variable.size()];
+      }
+    }];
 }
 
 def VectorChain_ScanWithGapOp:VectorChain_Op<"scan_with_gap",

@@ -387,12 +387,12 @@ def Agen_CompositeLoadAndStoreOp : Agen_Op<"composite_load_and_store", [
       return getDstMapAttr();
     }
 
-    [[nodiscard]] auto getLoadInductionVar() -> TypedValue<VectorType> {
-      return cast<TypedValue<VectorType>>(
-        getRegion().getBlocks().begin()->getArgument(0));
+    Value getLoadInductionVar() {
+      return getRegion().getBlocks().begin()->getArgument(0);
     }
-    [[deprecated("use getLoadInductionVar().getType()")]]
-    Type getLoadInductionVarType() { return getLoadInductionVar().getType(); }
+    Type getLoadInductionVarType() {
+      return getRegion().getBlocks().begin()->getArgumentTypes()[0];
+    }
 
     [[deprecated("use getSrcMapOperands()")]]
     ::mlir::Operation::operand_range getSrcMapIndices() {
@@ -458,12 +458,12 @@ def Agen_CompositeLoadOp:Agen_Op<"composite_load", [
     [[deprecated("use getMemRef().getType()")]]
     MemRefType getMemRefType() { return getMemRef().getType(); }
 
-    [[nodiscard]] auto getLoadInductionVar() -> TypedValue<VectorType> {
-      return cast<TypedValue<VectorType>>(
-        getRegion().getBlocks().begin()->getArgument(0));
+    Value getLoadInductionVar() {
+      return getRegion().getBlocks().begin()->getArgument(0);
     }
-    [[deprecated("use getLoadInductionVar().getType()")]]
-    Type getLoadInductionVarType() { return getLoadInductionVar().getType(); }
+    Type getLoadInductionVarType() {
+      return getRegion().getBlocks().begin()->getArgumentTypes()[0];
+    }
 
     [[deprecated("use getMapOperands()")]]
     ::mlir::Operation::operand_range getMapIndices() {
