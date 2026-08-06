@@ -311,12 +311,9 @@ def KTDF_TilingReserveSizeOp : KTDF_Op<"tiling.reserve_size", [Pure]> {
 
   let builders = [
     OpBuilder<(ins "int64_t":$minValue, "int64_t":$divisibility), [{
-      auto indexType = $_builder.getIndexType();
-      $_state.addAttribute(getMinValueAttrName($_state.name),
-                          $_builder.getIndexAttr(minValue));
-      $_state.addAttribute(getDivisibilityAttrName($_state.name),
-                          $_builder.getIndexAttr(divisibility));
-      $_state.addTypes(indexType);
+      build($_builder, $_state, $_builder.getIndexType(), 
+            $_builder.getIndexAttr(minValue), 
+            $_builder.getIndexAttr(divisibility));
     }]>
   ];
 

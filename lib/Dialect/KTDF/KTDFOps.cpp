@@ -366,12 +366,12 @@ auto StageOp::verify() -> LogicalResult {
 void StageOp::build(OpBuilder& builder, OperationState& state,
                     ValueRange depends_in, ValueRange depends_out,
                     function_ref<void(OpBuilder&, Location)> body_builder) {
+  auto& props = state.getOrAddProperties<Properties>();
+
   state.addOperands(depends_in);
   state.addOperands(depends_out);
-  state.addAttribute(
-      getOperandSegmentSizesAttrName(state.name),
-      builder.getDenseI32ArrayAttr({static_cast<int32_t>(depends_in.size()),
-                                    static_cast<int32_t>(depends_out.size())}));
+  props.operandSegmentSizes = {static_cast<int32_t>(depends_in.size()),
+                               static_cast<int32_t>(depends_out.size())};
   auto& body = state.addRegion()->emplaceBlock();
 
   if (body_builder) {
@@ -623,11 +623,12 @@ void ParallelOp::build(
     OpBuilder& builder, OperationState& state, ValueRange lower_bounds,
     ValueRange upper_bounds, ValueRange steps, int64_t num_instances,
     function_ref<void(OpBuilder&, Location, ValueRange, Value)> body_builder) {
+  auto& props = state.getOrAddProperties<Properties>();
+
   state.addOperands(lower_bounds);
   state.addOperands(upper_bounds);
   state.addOperands(steps);
-  state.addAttribute(getNumInstancesAttrName(state.name),
-                     builder.getI64IntegerAttr(num_instances));
+  props.num_instances = builder.getI64IntegerAttr(num_instances);
 
   // Create the body region with a single block. The block has one index
   // argument per induction variable plus one trailing instance-id argument.
@@ -649,6 +650,7 @@ auto ParallelOp::parse(OpAsmParser& parser, OperationState& result)
     -> ParseResult {
   auto& builder = parser.getBuilder();
   const auto index_ty = builder.getIndexType();
+  auto& props = result.getOrAddProperties<Properties>();
 
   // Parse the block-argument list: `(` %iv1, %iv2, ..., %inst `)`.
   SmallVector<OpAsmParser::Argument> body_args;
@@ -686,12 +688,9 @@ auto ParallelOp::parse(OpAsmParser& parser, OperationState& result)
   }
 
   // Parse `distribute` `(` `num_instances` `=` integer-literal `)`.
-  IntegerAttr num_instances_attr;
   if (parser.parseKeyword("distribute") || parser.parseLParen() ||
       parser.parseKeyword("num_instances") || parser.parseEqual() ||
-      parser.parseAttribute(num_instances_attr, builder.getI64Type(),
-                            ParallelOp::getNumInstancesAttrName(result.name),
-                            result.attributes) ||
+      parser.parseAttribute(props.num_instances, builder.getI64Type()) ||
       parser.parseRParen()) {
     return failure();
   }
