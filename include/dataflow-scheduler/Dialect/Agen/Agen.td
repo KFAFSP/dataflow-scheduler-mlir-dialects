@@ -390,8 +390,9 @@ def Agen_CompositeLoadAndStoreOp : Agen_Op<"composite_load_and_store", [
     Value getLoadInductionVar() {
       return getRegion().getBlocks().begin()->getArgument(0);
     }
+    [[deprecated("use getLoadInductionVar().getType()")]]
     Type getLoadInductionVarType() {
-      return getRegion().getBlocks().begin()->getArgumentTypes()[0];
+      return getLoadInductionVar().getType();
     }
 
     [[deprecated("use getSrcMapOperands()")]]
@@ -461,8 +462,9 @@ def Agen_CompositeLoadOp:Agen_Op<"composite_load", [
     Value getLoadInductionVar() {
       return getRegion().getBlocks().begin()->getArgument(0);
     }
+    [[deprecated("use getLoadInductionVar().getType()")]]
     Type getLoadInductionVarType() {
-      return getRegion().getBlocks().begin()->getArgumentTypes()[0];
+      return getLoadInductionVar().getType();
     }
 
     [[deprecated("use getMapOperands()")]]
