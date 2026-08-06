@@ -113,7 +113,7 @@ def UniformizeRegionsOp : Uniform_Op<"uniformize_regions",
 }
 
 def DefImmutableMappingOp : Uniform_Op<"def_immutable_mapping",
-  [NoMemoryEffect, IsolatedFromAbove, AttrSizedOperandSegments]> {
+  [NoMemoryEffect, IsolatedFromAbove, SameVariadicOperandSize]> {
   let summary = "def_immutable_mapping operation";
   let description = [{
     Constructs an immutable key-value mapping from one set of SSA values to

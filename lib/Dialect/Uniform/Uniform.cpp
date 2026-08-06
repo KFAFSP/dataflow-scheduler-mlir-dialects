@@ -64,6 +64,7 @@ void UniformDialect::initialize() {
 // }
 ParseResult UniformizeRegionsOp::parse(OpAsmParser& parser,
                                        OperationState& result) {
+  auto& props = result.getOrAddProperties<Properties>();
   auto& builder = parser.getBuilder();
   auto index_type = builder.getIndexType();
 
@@ -90,8 +91,7 @@ ParseResult UniformizeRegionsOp::parse(OpAsmParser& parser,
   result.regions.pop_back();  // pop the empty region
   op_result = op_result || parser.parseOptionalRBrace() ||
               parser.parseOptionalAttrDict(result.attributes);
-  result.addAttribute(getListSizesAttrName(result.name),
-                      builder.getI32ArrayAttr(list_sizes));
+  props.list_sizes = builder.getI32ArrayAttr(list_sizes);
 
   return failure(op_result);
 }
@@ -243,6 +243,7 @@ Region* UniformizeRegionsOp::getRegionFromUnit(Value unit) {
 // }
 ParseResult EqualizePatternOp::parse(OpAsmParser& parser,
                                      OperationState& result) {
+  auto& props = result.getOrAddProperties<Properties>();
   auto& builder = parser.getBuilder();
   auto index_type = builder.getIndexType();
 
@@ -267,8 +268,7 @@ ParseResult EqualizePatternOp::parse(OpAsmParser& parser,
   }
   result.regions.pop_back();  // pop the empty region
   op_result = op_result || parser.parseOptionalRBrace();
-  result.addAttribute(getListSizesAttrName(result.name),
-                      builder.getI32ArrayAttr(list_sizes));
+  props.list_sizes = builder.getI32ArrayAttr(list_sizes);
 
   return failure(op_result);
 }
@@ -436,11 +436,6 @@ ParseResult DefImmutableMappingOp::parse(OpAsmParser& parser,
   }
 
   result.types.push_back(result_type);
-  int size = keys.size();
-  result.attributes.push_back(
-      builder.getNamedAttr(getOperandSegmentSizesAttrName(OperationName(
-                               getOperationName(), builder.getContext())),
-                           builder.getDenseI32ArrayAttr({size, size})));
   op_result = op_result ||
               parser.resolveOperands(keys, index_type, result.operands) ||
               parser.resolveOperands(values, value_type, result.operands);
@@ -527,7 +522,7 @@ std::optional<Value> DefImmutableMappingOp::getValue(Value key) {
 
 DenseMap<Value, Value> DefImmutableMappingOp::toMap() {
   DenseMap<Value, Value> result;
-  for (auto [key, value] : llvm::zip(getKeys(), getValues())) {
+  for (auto [key, value] : llvm::zip_equal(getKeys(), getValues())) {
     result[key] = value;
   }
   return result;
@@ -593,8 +588,8 @@ void QueryMapOp::print(OpAsmPrinter& p) {
 
 LogicalResult QueryMapOp::verify() { return success(); }
 
-void QueryMapOp::getAllQueriedValues(SmallVectorImpl<Value> &result) {
-  auto &op = *this;
+void QueryMapOp::getAllQueriedValues(SmallVectorImpl<Value>& result) {
+  auto& op = *this;
   auto map_op = op.getMap().getDefiningOp<uniform::DefImmutableMappingOp>();
   auto parametric_key = op.getKey();
   SmallVector<Value> all_keys;
