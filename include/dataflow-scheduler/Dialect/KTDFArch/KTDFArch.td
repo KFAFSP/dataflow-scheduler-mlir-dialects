@@ -427,9 +427,11 @@ def KTDFArch_MemoryOp : KTDFArch_NodeOp<
         CArg<"std::optional<int64_t>", "std::nullopt">:$size
     ), [{
       $_state.types.push_back(MemoryType::get($_builder.getContext()));
-      $_state.addAttribute(getKindAttrName($_state.name), kind);
+
+      auto& props = $_state.getOrAddProperties<Properties>();
+      props.kind = kind;
       if (size) {
-        $_state.addAttribute(getSizeAttrName($_state.name), $_builder.getI64IntegerAttr(*size));
+        props.size = $_builder.getI64IntegerAttr(*size);
       }
     }]>
   ];
@@ -467,8 +469,10 @@ def KTDFArch_ExecutionUnitOp : KTDFArch_NodeOp<
   let builders = [
     OpBuilder<(ins CArg<"bool", "false">:$load_store), [{
       $_state.types.push_back(ExecutionUnitType::get($_builder.getContext()));
+
+      auto& props = $_state.getOrAddProperties<Properties>();
       if (load_store) {
-        $_state.addAttribute(getLoadStoreAttrName($_state.name), $_builder.getUnitAttr());
+        props.load_store = $_builder.getUnitAttr();
       }
     }]>
   ];

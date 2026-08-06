@@ -180,13 +180,14 @@ void KTDFArchDialect::registerOps() {
 
 void DeviceOp::build(OpBuilder& /*builder*/, OperationState& state,
                      StringAttr sym_name, StringAttr import_path) {
-  state.addAttribute(getSymNameAttrName(state.name), sym_name);
+  auto& props = state.getOrAddProperties<Properties>();
+  props.sym_name = sym_name;
 
   if (!import_path || import_path.empty()) {
     state.addRegion()->emplaceBlock();
   } else {
     state.addRegion();
-    state.addAttribute(getImportPathAttrName(state.name), import_path);
+    props.import_path = import_path;
   }
 }
 
@@ -242,11 +243,11 @@ auto DeviceOp::verifyRegions() -> LogicalResult {
 
 auto GroupOp::parse(OpAsmParser& parser, OperationState& result)
     -> ParseResult {
+  auto& props = result.getOrAddProperties<Properties>();
+
   // [ symbol-name ]
   {
-    StringAttr sym_name;
-    std::ignore = parser.parseOptionalSymbolName(
-        sym_name, getIdAttrName(result.name), result.attributes);
+    std::ignore = parser.parseOptionalSymbolName(props.id);
   }
 
   // dictionary-attr
@@ -376,6 +377,8 @@ auto MemoryOp::verify() -> LogicalResult {
 
 auto SwitchOp::parse(OpAsmParser& parser, OperationState& result)
     -> ParseResult {
+  auto& props = result.getOrAddProperties<Properties>();
+
   if (parseSwitchType(parser, result.types)) {
     return failure();
   }
@@ -389,8 +392,7 @@ auto SwitchOp::parse(OpAsmParser& parser, OperationState& result)
     const auto num_ports = static_cast<int64_t>(result.types.size());
     const auto type = RankedTensorType::get({num_ports, num_ports},
                                             parser.getBuilder().getI1Type());
-    result.addAttribute(connectivity_name,
-                        DenseIntElementsAttr::get(type, true));
+    props.connectivity = DenseIntElementsAttr::get(type, true);
   }
 
   return success();
@@ -411,6 +413,8 @@ void SwitchOp::print(OpAsmPrinter& printer) {
 
 void SwitchOp::build(OpBuilder& builder, OperationState& state,
                      unsigned num_ports, ElementsAttr connectivity) {
+  auto& props = state.getOrAddProperties<Properties>();
+
   state.types.resize(num_ports, PortType::get(builder.getContext()));
   if (!connectivity) {
     const auto type =
@@ -418,7 +422,7 @@ void SwitchOp::build(OpBuilder& builder, OperationState& state,
     connectivity = DenseIntElementsAttr::get(type, true);
   }
 
-  state.addAttribute(getConnectivityAttrName(state.name), connectivity);
+  props.connectivity = connectivity;
 }
 
 auto SwitchOp::verify() -> LogicalResult {
