@@ -60,12 +60,12 @@ Value GetUnitOp::getUnit() {
 void ProgramUnitOp::build(OpBuilder& builder, OperationState& result,
                           ValueRange unitIds, StringAttr precision_attr,
                           ProgramUnitOp::BodyBuilderFn bodyBuilder) {
+  auto& props = result.getOrAddProperties<Properties>();
+
   result.addOperands(unitIds);
-  //  result.addTypes(unitId.getType());
 
   if (!precision_attr.getValue().str().empty()) {
-    result.addAttribute(dataflow::ProgramUnitOp::getPrecisionAttrName(result.name),
-                        precision_attr);
+    props.precision = precision_attr;
   }
 
   // Add a body region with block arguments as unwrapped async value operands.
@@ -181,6 +181,8 @@ void ProgramUnitOp::print(OpAsmPrinter& _odsPrinter) {
 
 ParseResult GetPagedLogicalMemoryViewOp::parse(OpAsmParser& parser,
                                                OperationState& result) {
+  auto& props = result.getOrAddProperties<Properties>();
+
   // Parse the operands.
   OpAsmParser::UnresolvedOperand unit, start_addr;
   auto op_result = parser.parseOperand(unit) || parser.parseComma() ||
@@ -216,7 +218,7 @@ ParseResult GetPagedLogicalMemoryViewOp::parse(OpAsmParser& parser,
   op_result = op_result || parser.parseRBrace();
 
   auto& builder = parser.getBuilder();
-  result.addAttribute("idx_sets", builder.getArrayAttr(idx_sets));
+  props.idx_sets = builder.getArrayAttr(idx_sets);
 
   // Parse the types. The operation only displays the type of the unit and
   // start_address operands, and the type of the result of the operation.
