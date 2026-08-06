@@ -44,13 +44,11 @@ using namespace mlir::dataflow;
 //===----------------------------------------------------------------------===//
 
 LogicalResult GetUnitOp::verify() {
-  auto& op = *this;
-  return op.getNumResults() >= 1 ? LogicalResult::success() : failure();
-}
+  if (getNumResults() < 1) {
+    return emitOpError("expected at least 1 result");
+  }
 
-Value GetUnitOp::getUnit() {
-  auto& op = *this;
-  return op.getResult(0);
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -288,8 +286,7 @@ LogicalResult GetPagedLogicalMemoryViewOp::verify() {
 
     // The page sets need to be hyper rectangular.
     auto idx_set = idx_sets[page_idx];
-    auto page_set = dyn_cast<IntegerSetAttr>(idx_set);
-    if (!page_set) return op->emitOpError("idx_sets should be IntegerSetAttrs");
+    auto page_set = cast<IntegerSetAttr>(idx_set);
     FlatLinearValueConstraints page_set_flat(page_set.getValue());
     if (!page_set_flat.isHyperRectangular(0, page_set_flat.getNumCols() - 1))
       return op->emitOpError("idx_set should be hyper rectangular");

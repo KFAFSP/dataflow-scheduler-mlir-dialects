@@ -33,6 +33,11 @@ class Dataflow_Op<string mnemonic, list<Trait> traits = []> :
     Op<Dataflow_Dialect, mnemonic, traits> {
 }
 
+def IntegerSetArrayAttr : TypedArrayAttrBase<
+    IntegerSetAttr, 
+    "IntegerSet array attribute"> {
+}
+
 // FIXME: A lot weird ODS going on here.
 
 def Dataflow_GetUnitOp:Dataflow_Op<"get_unit",
@@ -63,7 +68,7 @@ def Dataflow_GetUnitOp:Dataflow_Op<"get_unit",
     let hasVerifier = 1;
 
     let extraClassDeclaration = [{
-      Value getUnit();
+      [[nodiscard]] auto getUnit() -> Value { return getUnits().front(); }
     }];
 }
 
@@ -288,7 +293,7 @@ def Dataflow_GetPagedLogicalMemoryViewOp:Dataflow_Op<"get_paged_logical_memory_v
                          Index:$start_addr,
                          Variadic<Index>:$page_start_addrs,
                          AffineMapAttr:$layout_map,
-                         ArrayAttr:$idx_sets);
+                         IntegerSetArrayAttr:$idx_sets);
     let results = (outs AnyTypeOf<[AnyMemRef]>:$data);
     let hasCustomAssemblyFormat = 1;
     let hasVerifier = 1;
