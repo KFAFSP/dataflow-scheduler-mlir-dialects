@@ -460,25 +460,44 @@ def VectorChain_ShuffleOp:VectorChain_Op<"shuffle",
                          Variadic<AnyTypeOf<[Index, AnyInteger, AnyFloat]>>:$pad,
                          Optional<AnyVectorOfAnyRank>:$mask,
                          OptionalAttr<StrAttr>:$dbgName,
-                         ArrayAttr:$indices,
+                         I32ArrayAttr:$indices,
                          I32Attr:$repetition);
 
     let results = (outs AnyTypeOf<[Dataflow_CustomVectorType, AnyVectorOfAnyRank]>:$output);
-    let hasCustomAssemblyFormat = 1;
+    let assemblyFormat = [{
+      `input````(` $input `)`
+      ( `,` `variable````(` $variable^ `)`)?
+      ( `,` `pad````(` $pad^ `)`)?
+      ( `,` `mask````(` $mask^ `)`)?
+      attr-dict
+      `:` functional-type(operands, results)
+    }];
     let hasVerifier = 1;
 
     let builders = [
       OpBuilder<(ins "Type":$resultType, "Value":$input, "ValueRange":$variable,
                      "ValueRange":$pad, "Value":$mask, "ArrayAttr":$indices,
-                     "IntegerAttr":$repetition, "StringAttr":$dbgName)>,
+                     "IntegerAttr":$repetition, "StringAttr":$dbgName), [{
+        build($_builder, $_state, resultType, input, variable, pad, mask,
+              dbgName, indices, repetition);
+      }]>,
       OpBuilder<(ins "Type":$resultType, "Value":$input, "ArrayAttr":$indices,
-                     "IntegerAttr":$repetition, "StringAttr":$dbgName)>,
+                     "IntegerAttr":$repetition, "StringAttr":$dbgName), [{
+        build($_builder, $_state, resultType, input, {}, {}, nullptr, dbgName,
+              indices, repetition);
+      }]>,
       OpBuilder<(ins "Type":$resultType, "Value":$input, "Value":$mask,
                      "ArrayAttr":$indices, "IntegerAttr":$repetition,
-                     "StringAttr":$dbgName)>,
+                     "StringAttr":$dbgName), [{
+        build($_builder, $_state, resultType, input, {}, {}, mask, dbgName,
+             indices, repetition);
+      }]>,
       OpBuilder<(ins "Type":$resultType, "Value":$input, "ValueRange":$variable,
                      "ValueRange":$pad, "ArrayAttr":$indices,
-                     "IntegerAttr":$repetition, "StringAttr":$dbgName)>
+                     "IntegerAttr":$repetition, "StringAttr":$dbgName), [{
+        build($_builder, $_state, resultType, input, variable, pad, nullptr,
+              dbgName, indices, repetition);
+      }]>
     ];
 
     let extraClassDeclaration = [{

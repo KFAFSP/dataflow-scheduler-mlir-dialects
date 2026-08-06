@@ -24,6 +24,7 @@
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/DialectImplementation.h>
 
 #include "dataflow-scheduler/Dialect/Dataflow/Utils.h"
@@ -210,8 +211,10 @@ LogicalResult ShuffleOp::verify() {
     return failure();
   }
 
-  const auto input_elements_type = dataflow::getElementType(op.getInput().getType());
-  const auto input_num_of_elements = dataflow::getNumElements(op.getInput().getType());
+  const auto input_elements_type =
+      dataflow::getElementType(op.getInput().getType());
+  const auto input_num_of_elements =
+      dataflow::getNumElements(op.getInput().getType());
 
   // The element type of the input should match the type of the output (type
   // only, not necessarily number of elements).
@@ -228,233 +231,14 @@ LogicalResult ShuffleOp::verify() {
   int max_element = input_num_of_elements - 1;
   int min_element = -(static_cast<int>(op.getVariable().size()) +
                       static_cast<int>(op.getPad().size()));
-  for (std::size_t i = 0; i < indices_size; ++i) {
-    auto element = dyn_cast<IntegerAttr>(indices[i]);
-    if (!element) {
-      op->emitOpError("indices element is not integer");
-      return failure();
-    }
-
-    int64_t element_value = element.getInt();
-    if (element_value < min_element || element_value > max_element) {
+  for (auto index : llvm::map_range(indices, [](Attribute attr) {
+         return cast<IntegerAttr>(attr).getValue().getSExtValue();
+       })) {
+    if (index < min_element || index > max_element) {
       op->emitOpError("out of bounds indices element");
       return failure();
     }
   }
 
   return success();
-}
-
-ParseResult ShuffleOp::parse(OpAsmParser& parser, OperationState& state) {
-  OpAsmParser::UnresolvedOperand input;
-  SmallVector<OpAsmParser::UnresolvedOperand> variableOperands;
-  SmallVector<OpAsmParser::UnresolvedOperand> padOperands;
-  OpAsmParser::UnresolvedOperand mask;
-
-  Type inputType, maskType, resultType;
-  SmallVector<Type> variableTypes;
-  SmallVector<Type> padTypes;
-
-  if (parser.parseKeyword("input") || parser.parseLParen() ||
-      parser.parseOperand(input) || parser.parseRParen())
-    return failure();
-
-  bool hasVariable = false;
-  bool hasPad = false;
-  bool hasMask = false;
-
-  while (succeeded(parser.parseOptionalComma())) {
-    if (!hasVariable && succeeded(parser.parseOptionalKeyword("variable"))) {
-      hasVariable = true;
-      if (parser.parseLParen() ||
-          parser.parseOperandList(variableOperands,
-                                  OpAsmParser::Delimiter::None) ||
-          parser.parseRParen())
-        return failure();
-      continue;
-    }
-    if (!hasPad && succeeded(parser.parseOptionalKeyword("pad"))) {
-      hasPad = true;
-      if (parser.parseLParen() ||
-          parser.parseOperandList(padOperands,
-                                  OpAsmParser::Delimiter::None) ||
-          parser.parseRParen())
-        return failure();
-      continue;
-    }
-    if (!hasMask && succeeded(parser.parseOptionalKeyword("mask"))) {
-      hasMask = true;
-      if (parser.parseLParen() || parser.parseOperand(mask) ||
-          parser.parseRParen())
-        return failure();
-      continue;
-    }
-    return parser.emitError(parser.getCurrentLocation(),
-                            "expected 'variable', 'pad', or 'mask' keyword");
-  }
-
-  if (parser.parseOptionalAttrDict(state.attributes))
-    return failure();
-
-  if (parser.parseColon() || parser.parseType(inputType))
-    return failure();
-
-  if (hasVariable) {
-    for (size_t i = 0; i < variableOperands.size(); ++i) {
-      Type varType;
-      if (parser.parseComma() || parser.parseType(varType))
-        return failure();
-      variableTypes.push_back(varType);
-    }
-  }
-  if (hasPad) {
-    for (size_t i = 0; i < padOperands.size(); ++i) {
-      Type padType;
-      if (parser.parseComma() || parser.parseType(padType))
-        return failure();
-      padTypes.push_back(padType);
-    }
-  }
-  if (hasMask) {
-    if (parser.parseComma() || parser.parseType(maskType))
-      return failure();
-  }
-  if (parser.parseComma() || parser.parseType(resultType))
-    return failure();
-
-  if (parser.resolveOperand(input, inputType, state.operands))
-    return failure();
-  if (hasVariable) {
-    for (size_t i = 0; i < variableOperands.size(); ++i)
-      if (parser.resolveOperand(variableOperands[i], variableTypes[i],
-                                state.operands))
-        return failure();
-  }
-  if (hasPad) {
-    for (size_t i = 0; i < padOperands.size(); ++i)
-      if (parser.resolveOperand(padOperands[i], padTypes[i], state.operands))
-        return failure();
-  }
-  if (hasMask) {
-    if (parser.resolveOperand(mask, maskType, state.operands))
-      return failure();
-  }
-
-  auto& builder = parser.getBuilder();
-  state.addAttribute(
-      "operandSegmentSizes",
-      builder.getDenseI32ArrayAttr(
-          {1, static_cast<int32_t>(variableOperands.size()),
-           static_cast<int32_t>(padOperands.size()), hasMask ? 1 : 0}));
-  state.addTypes(resultType);
-  return success();
-}
-
-void ShuffleOp::print(OpAsmPrinter& p) {
-  Operation* op = getOperation();
-  auto segmentSizes =
-      op->getAttrOfType<DenseI32ArrayAttr>("operandSegmentSizes");
-  int32_t numVariable = segmentSizes.asArrayRef()[1];
-  int32_t numPad = segmentSizes.asArrayRef()[2];
-  int32_t numMask = segmentSizes.asArrayRef()[3];
-
-  auto operands = op->getOperands();
-  unsigned operandIdx = 0;
-
-  p << " input(" << operands[operandIdx++] << ")";
-  if (numVariable > 0) {
-    p << ", variable(";
-    for (int32_t i = 0; i < numVariable; ++i) {
-      if (i > 0) p << ", ";
-      p << operands[operandIdx++];
-    }
-    p << ")";
-  }
-  if (numPad > 0) {
-    p << ", pad(";
-    for (int32_t i = 0; i < numPad; ++i) {
-      if (i > 0) p << ", ";
-      p << operands[operandIdx++];
-    }
-    p << ")";
-  }
-  if (numMask > 0)
-    p << ", mask(" << operands[operandIdx++] << ")";
-
-  SmallVector<StringRef> elidedAttrs = {"operandSegmentSizes"};
-  p.printOptionalAttrDict(op->getAttrs(), elidedAttrs);
-
-  operandIdx = 0;
-  p << " : " << operands[operandIdx++].getType();
-  for (int32_t i = 0; i < numVariable; ++i)
-    p << ", " << operands[operandIdx++].getType();
-  for (int32_t i = 0; i < numPad; ++i)
-    p << ", " << operands[operandIdx++].getType();
-  if (numMask > 0)
-    p << ", " << operands[operandIdx++].getType();
-  p << ", " << op->getResult(0).getType();
-}
-
-void ShuffleOp::build(OpBuilder& builder, OperationState& state,
-                      Type resultType, Value input, ValueRange variable,
-                      ValueRange pad, Value mask, ArrayAttr indices,
-                      IntegerAttr repetition, StringAttr dbgName) {
-  state.addOperands(input);
-  state.addOperands(variable);
-  state.addOperands(pad);
-  if (mask) state.addOperands(mask);
-  if (dbgName) state.addAttribute("dbgName", dbgName);
-  state.addAttribute("indices", indices);
-  state.addAttribute("repetition", repetition);
-  state.addAttribute(
-      "operandSegmentSizes",
-      builder.getDenseI32ArrayAttr(
-          {1, static_cast<int32_t>(variable.size()),
-           static_cast<int32_t>(pad.size()), mask ? 1 : 0}));
-  state.addTypes(resultType);
-}
-
-void ShuffleOp::build(OpBuilder& builder, OperationState& state,
-                      Type resultType, Value input, ArrayAttr indices,
-                      IntegerAttr repetition, StringAttr dbgName) {
-  state.addOperands(input);
-  if (dbgName) state.addAttribute("dbgName", dbgName);
-  state.addAttribute("indices", indices);
-  state.addAttribute("repetition", repetition);
-  state.addAttribute("operandSegmentSizes",
-                     builder.getDenseI32ArrayAttr({1, 0, 0, 0}));
-  state.addTypes(resultType);
-}
-
-void ShuffleOp::build(OpBuilder& builder, OperationState& state,
-                      Type resultType, Value input, Value mask,
-                      ArrayAttr indices, IntegerAttr repetition,
-                      StringAttr dbgName) {
-  state.addOperands(input);
-  if (mask) state.addOperands(mask);
-  if (dbgName) state.addAttribute("dbgName", dbgName);
-  state.addAttribute("indices", indices);
-  state.addAttribute("repetition", repetition);
-  state.addAttribute(
-      "operandSegmentSizes",
-      builder.getDenseI32ArrayAttr({1, 0, 0, mask ? 1 : 0}));
-  state.addTypes(resultType);
-}
-
-void ShuffleOp::build(OpBuilder& builder, OperationState& state,
-                      Type resultType, Value input, ValueRange variable,
-                      ValueRange pad, ArrayAttr indices,
-                      IntegerAttr repetition, StringAttr dbgName) {
-  state.addOperands(input);
-  state.addOperands(variable);
-  state.addOperands(pad);
-  if (dbgName) state.addAttribute("dbgName", dbgName);
-  state.addAttribute("indices", indices);
-  state.addAttribute("repetition", repetition);
-  state.addAttribute(
-      "operandSegmentSizes",
-      builder.getDenseI32ArrayAttr(
-          {1, static_cast<int32_t>(variable.size()),
-           static_cast<int32_t>(pad.size()), 0}));
-  state.addTypes(resultType);
 }
