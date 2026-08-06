@@ -606,6 +606,7 @@ def Agen_CompositeIndirectLoadAndStoreOp:Agen_Op<"composite_indirect_load_and_st
 
   let skipDefaultBuilders = 1;
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
   let builders = [
     /// Builds a composite indirect load_and_store op with the specified map and operands.
     /// The $operands argument is the list of operands corresponding to $indirect_src_map_indices, $direct_src_map_indices,$indirect_dst_map_indices, $direct_dst_map_indices, $multicast_info, and $time_symbols in that order.
@@ -713,6 +714,7 @@ def Agen_CompositeIndirectLoadOp:Agen_Op<"composite_indirect_load",
 
   let skipDefaultBuilders = 1;
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
   let builders = [
     /// Builds a composite indirect load op with the specified map and operands.
     /// The $operands argument is the list of operands corresponding to $indirect_map_indices, $direct_map_indices, $multicast_info, and $time_symbols in that order.
@@ -795,6 +797,7 @@ def Agen_CompositeIndirectStoreOp:Agen_Op<"composite_indirect_store",
 
   let skipDefaultBuilders = 1;
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
   let builders = [
     /// Builds a composite indirect store op with the specified map and operands.
     /// The $operands argument is the list of operands corresponding to $indirect_map_indices, $direct_map_indices, $multicast_info, and $time_symbols in that order.
@@ -870,6 +873,7 @@ def Agen_IndirectVectorLoadOp:Agen_Op<"indirect_vector_load",
   let results = (outs AnyTypeOf<[AnyVectorOfAnyRank, Dataflow_CustomVectorType]>:$result);
   let skipDefaultBuilders = 1;
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
   let builders = [
     /// Builds an indirect vector_load op with the specified map and operands.
     /// The $operands argument is the list of operands corresponding to $indirect_map_indices, $direct_map_indices, $multicast_info
@@ -943,6 +947,7 @@ def Agen_IndirectVectorStoreOp:Agen_Op<"indirect_vector_store",
 
   let skipDefaultBuilders = 1;
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
   let builders = [
     /// Builds an indirect vector_store op with the specified map and operands.
     /// The $operands argument is the list of operands corresponding to $indirect_map_indices, $direct_map_indices, $multicast_info
