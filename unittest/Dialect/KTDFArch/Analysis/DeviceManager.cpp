@@ -19,18 +19,27 @@
 #include "dataflow-scheduler/Dialect/KTDFArch/Analysis/DeviceManager.h"
 
 #include <doctest/doctest.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/AsmState.h>
+#include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/AnalysisManager.h>
+#include <mlir/Pass/Pass.h>
+#include <mlir/Pass/PassManager.h>
+
+#include <memory>
 
 #include "Utils.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"
 
 using namespace mlir;
 using namespace mlir::ktdf_arch;
@@ -38,7 +47,7 @@ using namespace mlir::ktdf_arch;
 TEST_CASE("mlir::ktdf_arch::Device") {
   // Setup an MLIR context.
   DialectRegistry registry;
-  registry.insert<ktdf_arch::KTDFArchDialect>();
+  registry.insert<func::FuncDialect, ktdf_arch::KTDFArchDialect>();
   MLIRContext context(registry);
   context.allowUnregisteredDialects();
   context.loadAllAvailableDialects();
@@ -93,7 +102,7 @@ TEST_CASE("mlir::ktdf_arch::Device") {
 TEST_CASE("mlir::ktdf_arch::DeviceManager::getOrImportDevice()") {
   // Setup an MLIR context.
   DialectRegistry registry;
-  registry.insert<ktdf_arch::KTDFArchDialect>();
+  registry.insert<func::FuncDialect, ktdf_arch::KTDFArchDialect>();
   MLIRContext context(registry);
   context.allowUnregisteredDialects();
   context.loadAllAvailableDialects();
@@ -135,7 +144,7 @@ TEST_CASE("mlir::ktdf_arch::DeviceManager::getOrImportDevice()") {
 TEST_CASE("mlir::ktdf_arch::DeviceManager::getOrImportDevice(StringRef)") {
   // Setup an MLIR context.
   DialectRegistry registry;
-  registry.insert<ktdf_arch::KTDFArchDialect>();
+  registry.insert<func::FuncDialect, ktdf_arch::KTDFArchDialect>();
   MLIRContext context(registry);
   context.allowUnregisteredDialects();
   context.loadAllAvailableDialects();
@@ -171,7 +180,8 @@ TEST_CASE("mlir::ktdf_arch::DeviceManager::getOrImportDevice(StringRef)") {
   SUBCASE("import missing_device") {
     DiagRecorder recorder(&context, false);
     auto* const device = devices.getOrImportDevice("missing_device");
-    REQUIRE_FALSE(device);
+    REQUIRE(device);
+    CHECK_FALSE(*device);
   }
 
   SUBCASE("import device") {
@@ -203,20 +213,22 @@ TEST_CASE("mlir::ktdf_arch::DeviceManager::getOrImportDevice(StringRef)") {
   SUBCASE("import invalid_device") {
     DiagRecorder recorder(&context, false);
     auto* const device = devices.getOrImportDevice("invalid_device");
-    REQUIRE_FALSE(device);
+    REQUIRE(device);
+    CHECK_FALSE(*device);
   }
 
   SUBCASE("import recursive_device") {
     DiagRecorder recorder(&context, false);
     auto* const device = devices.getOrImportDevice("recursive_device");
-    REQUIRE_FALSE(device);
+    REQUIRE(device);
+    CHECK_FALSE(*device);
   }
 }
 
 TEST_CASE("mlir::ktdf_arch::DeviceManager::getOrImportDevice(DeviceOp)") {
   // Setup an MLIR context.
   DialectRegistry registry;
-  registry.insert<ktdf_arch::KTDFArchDialect>();
+  registry.insert<func::FuncDialect, ktdf_arch::KTDFArchDialect>();
   MLIRContext context(registry);
   context.allowUnregisteredDialects();
   context.loadAllAvailableDialects();
@@ -233,30 +245,112 @@ TEST_CASE("mlir::ktdf_arch::DeviceManager::getOrImportDevice(DeviceOp)") {
   SUBCASE("get inline_device") {
     const auto declaration = declarations.lookup<DeviceOp>("inline_device");
     DiagRecorder recorder(&context, true);
-    auto* const device = devices.getOrImportDevice(declaration);
-    REQUIRE(device);
+    const auto& device = devices.getOrImportDevice(declaration);
 
-    CHECK_EQ(device->getDeclaration(), declaration);
-    CHECK_EQ(device->getDeclaration(), device->getDefinition());
+    CHECK_EQ(device.getDeclaration(), declaration);
+    CHECK_EQ(device.getDeclaration(), device.getDefinition());
   }
 
   SUBCASE("import device") {
     const auto declaration = declarations.lookup<DeviceOp>("device");
     DiagRecorder recorder(&context, true);
-    auto* const device = devices.getOrImportDevice(declaration);
-    REQUIRE(device);
+    const auto& device = devices.getOrImportDevice(declaration);
 
-    CHECK_EQ(device->getDeclaration(), declaration);
-    CHECK_NE(device->getDeclaration(), device->getDefinition());
-    CHECK_EQ(device->getDefinition()->getParentOp(), nullptr);
+    CHECK_EQ(device.getDeclaration(), declaration);
+    CHECK_NE(device.getDeclaration(), device.getDefinition());
+    CHECK_EQ(device.getDefinition()->getParentOp(), nullptr);
+  }
+}
+
+namespace {
+
+struct UseDeviceManagerPass : OperationPass<> {
+  static constexpr auto kAddrAttrName = "device_manager.addr";
+
+  UseDeviceManagerPass()
+      : OperationPass<>(TypeID::get<UseDeviceManagerPass>()) {}
+
+  auto getName() const -> StringRef override { return "UseDeviceManagerPass"; }
+
+  auto clonePass() const -> std::unique_ptr<Pass> override {
+    return std::make_unique<UseDeviceManagerPass>(*this);
   }
 
-  SUBCASE("get invalid_declaration") {
-    DiagRecorder recorder(&context, true);
-    OpBuilder builder(&context);
-    auto invalid_declaration = DeviceOp::create(
-        builder, builder.getUnknownLoc(), "invalid_declaration");
+  void runOnOperation() override {
+    if (auto module = dyn_cast<ModuleOp>(getOperation()); module) {
+      auto& devices = getAnalysis<DeviceManager>();
 
-    REQUIRE_FALSE(devices.getOrImportDevice(invalid_declaration));
+      if (module->hasAttr(kAddrAttrName)) {
+        checkAddresses(module, devices);
+      } else {
+        storeAddresses(module, devices);
+      }
+      return;
+    }
+
+    auto module = getOperation()->getParentOfType<ModuleOp>();
+
+    const auto maybe_devices = getCachedParentAnalysis<DeviceManager>(module);
+    if (!maybe_devices) {
+      signalPassFailure();
+      return;
+    }
+
+    checkAddresses(module, maybe_devices->get());
   }
+
+  void storeAddresses(ModuleOp module, DeviceManager& devices) {
+    Builder builder(getOperation());
+
+    llvm::SmallVector<NamedAttribute> device_addrs;
+    for (auto declaration : module.getOps<DeviceOp>()) {
+      const auto& device = devices.getOrImportDevice(declaration);
+      declaration->setAttr(
+          kAddrAttrName,
+          builder.getI64IntegerAttr(reinterpret_cast<std::uintptr_t>(&device)));
+    }
+  }
+
+  void checkAddresses(ModuleOp module, DeviceManager& devices) {
+    for (auto declaration : module.getOps<DeviceOp>()) {
+      checkAddress(declaration, devices);
+    }
+  }
+
+  void checkAddress(DeviceOp declaration, DeviceManager& devices) {
+    const auto& device = devices.getOrImportDevice(declaration);
+    if (reinterpret_cast<std::uintptr_t>(&device) !=
+        declaration->getAttrOfType<IntegerAttr>(kAddrAttrName)
+            .getValue()
+            .getZExtValue()) {
+      signalPassFailure();
+      return;
+    }
+  }
+
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(UseDeviceManagerPass);
+};
+
+}  // namespace
+
+TEST_CASE("mlir::ktdf_arch::DeviceManager persistence") {
+  // Setup an MLIR context.
+  DialectRegistry registry;
+  registry.insert<func::FuncDialect, ktdf_arch::KTDFArchDialect>();
+  MLIRContext context(registry);
+  context.allowUnregisteredDialects();
+  context.loadAllAvailableDialects();
+
+  // Construct and parse the test MLIR program.
+  auto module = parse(&context, INPUTS_DIR "device-manager-test.mlir");
+  SymbolTable declarations(module.get());
+
+  PassManager pm(&context);
+  pm.addPass(std::make_unique<UseDeviceManagerPass>());
+  pm.addPass(std::make_unique<UseDeviceManagerPass>());
+  pm.addNestedPass<func::FuncOp>(std::make_unique<UseDeviceManagerPass>());
+  pm.addPass(std::make_unique<UseDeviceManagerPass>());
+  pm.addNestedPass<func::FuncOp>(std::make_unique<UseDeviceManagerPass>());
+
+  CHECK(succeeded(pm.run(module.get())));
 }

@@ -13,11 +13,10 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFArchAnalysi
 
   LINK_LIBS PUBLIC
     DataflowSchedulerDialects::KTDFArchDialect
-)
 
-mlir_target_link_libraries(DataflowSchedulerDialectsKTDFArchAnalysis PUBLIC
-  MLIRIR
-  MLIRParser
-  MLIRAnalysis
-  MLIRPass
+  LINK_MLIR_LIBS
+    MLIRIR
+    MLIRParser
+    MLIRAnalysis
+    MLIRPass
 )

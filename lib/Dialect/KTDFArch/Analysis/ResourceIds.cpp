@@ -20,6 +20,7 @@
 
 #include <llvm/ADT/SmallString.h>
 #include <llvm/Support/Casting.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/Pass/AnalysisManager.h>
 #include <mlir/Support/WalkResult.h>
@@ -32,14 +33,9 @@
 using namespace mlir;
 using namespace mlir::ktdf_arch;
 
-ResourceIds::ResourceIds(DeviceOp declaration, AnalysisManager& analyses)
-    : DeviceView(declaration, analyses) {
-  if (!getDevice()) {
-    return;
-  }
-
+ResourceIds::ResourceIds(const Device& device) : DeviceView(device) {
   // Visit all resources in the device to populate the map.
-  getDevice().getDefinition()->walk([&](Resource resource) {
+  getDevice().getBodyRegion().walk([&](Resource resource) {
     if (const auto id_attr = resource.getIdAttr(); id_attr) {
       auto [it, inserted] = map_.try_emplace(id_attr, resource);
       assert(inserted);
@@ -122,3 +118,5 @@ auto ResourceIds::getOrAssign(Resource resource,
 
   return assign(resource, *prefix);
 }
+
+MLIR_DEFINE_EXPLICIT_TYPE_ID(mlir::ktdf_arch::ResourceIds);

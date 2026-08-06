@@ -30,9 +30,17 @@ target_include_directories(dataflow-scheduler-dialects-tests PRIVATE
 target_compile_definitions(dataflow-scheduler-dialects-tests PRIVATE
   "INPUTS_DIR=\"${PROJECT_SOURCE_DIR}/test/Inputs/\""
 )
-target_compile_options(dataflow-scheduler-dialects-tests PRIVATE
-  -fno-rtti
-)
+llvm_update_compile_flags(dataflow-scheduler-dialects-tests)
+if(MLIR_LINK_MLIR_DYLIB)
+  target_link_libraries(dataflow-scheduler-dialects-tests
+    MLIR
+  )
+else()
+  target_link_libraries(dataflow-scheduler-dialects-tests
+    MLIRPass
+    MLIRFuncDialect
+  )
+endif()
 
 doctest_discover_tests(dataflow-scheduler-dialects-tests)
 

@@ -22,6 +22,7 @@
 #include <llvm/ADT/DenseMap.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/Pass/AnalysisManager.h>
+#include <mlir/Support/TypeID.h>
 
 #include "dataflow-scheduler/Dialect/KTDFArch/Analysis/DeviceManager.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"
@@ -43,8 +44,8 @@ class ResourceIds : public DeviceView {
   using map_type = DenseMap<StringAttr, Resource>;
 
  public:
-  /// Creates the ResourceIds for the device declared by @p declaration .
-  explicit ResourceIds(DeviceOp declaration, AnalysisManager& analyses);
+  /// Creates ResourceIds for @p device .
+  explicit ResourceIds(const Device& device);
 
   /// Obtains the resource with @p id , if it exists.
   [[nodiscard]] auto lookup(StringAttr id) const -> Resource {
@@ -101,5 +102,7 @@ class ResourceIds : public DeviceView {
 };
 
 }  // namespace mlir::ktdf_arch
+
+MLIR_DECLARE_EXPLICIT_TYPE_ID(mlir::ktdf_arch::ResourceIds);
 
 #endif  // DATAFLOW_SCHEDULER_DIALECT_KTDFARCH_ANALYSIS_RESOURCEIDS_H_
