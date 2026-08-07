@@ -32,3 +32,25 @@ module {
     return
   }
 }
+
+// CHECK-LABEL:   func.func @read_from_fifo_memref() {
+// CHECK-NEXT:     %[[FIFO_0:.*]] = ktdf.fifo.allocate() -> !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16>
+// CHECK-NEXT:     %[[READ_FROM_FIFO_0:.*]] = ktdf.read_from_fifo %[[FIFO_0]] : <"L1LU" -> "SFU", 64xf16> -> memref<64xf16>
+// CHECK-NEXT:     "test.op"(%[[READ_FROM_FIFO_0]]) : (memref<64xf16>) -> ()
+// CHECK-NEXT:     return
+// CHECK-NEXT:   }
+
+module {
+  func.func @read_from_fifo_memref() {
+    // Allocate a FIFO slot with 64 f16 elements
+    %slot0 = ktdf.fifo.allocate() -> !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16>
+
+    // Read from the FIFO slot into an unrealized memref buffer
+    %buf0 = ktdf.read_from_fifo %slot0 : !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16> -> memref<64xf16>
+
+    // Use the buffer
+    "test.op"(%buf0) : (memref<64xf16>) -> ()
+
+    return
+  }
+}

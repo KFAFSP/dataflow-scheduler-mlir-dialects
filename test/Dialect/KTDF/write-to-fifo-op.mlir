@@ -39,3 +39,25 @@ module {
     return
   }
 }
+
+// CHECK-LABEL:   func.func @write_to_fifo_memref() {
+// CHECK-NEXT:     %[[FIFO_0:.*]] = ktdf.fifo.allocate() -> !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16>
+// CHECK-NEXT:     %[[BUF_0:.*]] = "test.op"() : () -> memref<64xf16>
+// CHECK-NEXT:     ktdf.write_to_fifo %[[BUF_0]], %[[FIFO_0]] : memref<64xf16>, <"L1LU" -> "SFU", 64xf16>
+// CHECK-NEXT:     return
+// CHECK-NEXT:   }
+
+module {
+  func.func @write_to_fifo_memref() {
+    // Allocate a FIFO slot with 64 f16 elements
+    %slot0 = ktdf.fifo.allocate() -> !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16>
+
+    // Produce a memref buffer via an unregistered op
+    %buf0 = "test.op"() : () -> memref<64xf16>
+
+    // Write to the FIFO slot from the memref buffer
+    ktdf.write_to_fifo %buf0, %slot0 : memref<64xf16>, !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16>
+
+    return
+  }
+}

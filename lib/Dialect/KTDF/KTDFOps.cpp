@@ -576,22 +576,22 @@ void DataTransferOp::build(OpBuilder& builder, OperationState& state,
 
 namespace {
 
-auto verifyFifoReadWrite(FifoSlotType slot, RankedTensorType tensor,
+auto verifyFifoReadWrite(FifoSlotType slot, ShapedType shaped,
                          function_ref<InFlightDiagnostic()> emit_error)
     -> LogicalResult {
   const auto fifo_elements = slot.getNumElements();
 
   // Both must be dynamic or both must be static with matching values
-  const auto tensor_dynamic = tensor.getNumDynamicDims() != 0;
-  if (ShapedType::isDynamic(fifo_elements) != tensor_dynamic) {
+  const auto shaped_dynamic = shaped.getNumDynamicDims() != 0;
+  if (ShapedType::isDynamic(fifo_elements) != shaped_dynamic) {
     return emit_error()
-           << "FIFO slot and tensor must both be dynamic or both be static";
+           << "FIFO slot and data must both be dynamic or both be static";
   }
 
   // Verify total number of elements matches FIFO slot size
-  const auto tensor_elements = tensor.getNumElements();
-  if (!tensor_dynamic && tensor_elements != fifo_elements) {
-    return emit_error() << "tensor total elements (" << tensor_elements
+  const auto shaped_elements = shaped.getNumElements();
+  if (!shaped_dynamic && shaped_elements != fifo_elements) {
+    return emit_error() << "data total elements (" << shaped_elements
                         << ") must match FIFO slot size (" << fifo_elements
                         << ")";
   }
@@ -602,8 +602,10 @@ auto verifyFifoReadWrite(FifoSlotType slot, RankedTensorType tensor,
 }  // namespace
 
 auto ReadFromFifoOp::verify() -> LogicalResult {
-  return verifyFifoReadWrite(getFifoSlot().getType(), getResult().getType(),
-                             [&]() { return emitOpError(); });
+  return verifyFifoReadWrite(
+      getFifoSlot().getType(),
+      llvm::cast<ShapedType>(getResult().getType()),
+      [&]() { return emitOpError(); });
 }
 
 //===----------------------------------------------------------------------===//
@@ -611,8 +613,10 @@ auto ReadFromFifoOp::verify() -> LogicalResult {
 //===----------------------------------------------------------------------===//
 
 auto WriteToFifoOp::verify() -> LogicalResult {
-  return verifyFifoReadWrite(getFifoSlot().getType(), getData().getType(),
-                             [&]() { return emitOpError(); });
+  return verifyFifoReadWrite(
+      getFifoSlot().getType(),
+      llvm::cast<ShapedType>(getData().getType()),
+      [&]() { return emitOpError(); });
 }
 
 //===----------------------------------------------------------------------===//

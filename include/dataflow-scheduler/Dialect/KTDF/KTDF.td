@@ -132,22 +132,43 @@ def KTDF_ReadFromFifoOp : KTDF_Op<"read_from_fifo", [
       KTDF_ElementType<"_self">.result, 
       "element type">
   ]> {
-  let summary = "Read data from a FIFO slot into a tensor";
+  let summary = "Read data from a FIFO slot into a tensor or memref";
   let description = [{
     The `ktdf.read_from_fifo` operation reads data from a FIFO slot and returns
-    it as a tensor. This operation is used to consume data that has been written
-    to a FIFO slot by a previous stage in the dataflow pipeline.
+    it as a tensor or memref. This operation is used to consume data that has
+    been written to a FIFO slot by a previous stage in the dataflow pipeline.
 
-    The operation takes a FIFO slot as input and produces a tensor with the same
-    element type as the FIFO slot. The shape of the resulting tensor is determined
-    by the number of elements in the FIFO slot.
+    The operation takes a FIFO slot as input and produces a shaped value with
+    the same element type as the FIFO slot. The shape of the result is
+    determined by the number of elements in the FIFO slot.
+
+    ## Tensor result
+
+    When the result type is a tensor, the operation has the usual value
+    semantics of tensor operations.
+
+    ## Memref result
+
+    When the result type is a memref, the returned buffer is a special
+    *unrealized memory buffer* whose physical storage is not yet known at the
+    time the operation is written. Conceptually, this form is equivalent to
+    producing a tensor result followed by a deferred bufferization step that
+    assigns a future (FIFO-backed) buffer to that tensor. Lowering passes are
+    responsible for resolving the unrealized buffer to a concrete allocation.
+    A memref result produced with this op can be assumed to have a life-time
+    limited to the op's parent region scope, cannot leave that scope (eg via
+    yield) and does not alias any other memrefs.
 
     Example:
     ```mlir
-    // Read from a FIFO slot with 64 f16 elements
+    // Read from a FIFO slot into a tensor
     %slot = ktdf.fifo.allocate() -> !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16>
     %data = ktdf.read_from_fifo %slot : !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16> -> tensor<64xf16>
-    
+
+    // Read from a FIFO slot into an unrealized memref buffer
+    %slot = ktdf.fifo.allocate() -> !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16>
+    %buf  = ktdf.read_from_fifo %slot : !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16> -> memref<64xf16>
+
     // Read from a FIFO slot with dynamic size
     %size = arith.constant 8 : index
     %dyn_slot = ktdf.fifo.allocate(%size) -> !ktdf.fifo.slot<"SFU" -> "L1SU", ?xf16>
@@ -160,7 +181,7 @@ def KTDF_ReadFromFifoOp : KTDF_Op<"read_from_fifo", [
   );
 
   let results = (outs
-    AnyRankedTensor:$result
+    AnyTypeOf<[AnyRankedTensor, AnyMemRef]>:$result
   );
 
   let assemblyFormat = [{
@@ -188,22 +209,26 @@ def KTDF_WriteToFifoOp : KTDF_Op<"write_to_fifo", [
       KTDF_ElementType<"_self">.result, 
       "element type">
   ]> {
-  let summary = "Write data from a tensor to a FIFO slot";
+  let summary = "Write data from a tensor or memref to a FIFO slot";
   let description = [{
-    The `ktdf.write_to_fifo` operation writes data from a tensor to a FIFO slot.
-    This operation is used to produce data that will be consumed by a subsequent
-    stage in the dataflow pipeline.
+    The `ktdf.write_to_fifo` operation writes data from a tensor or memref to a
+    FIFO slot. This operation is used to produce data that will be consumed by a
+    subsequent stage in the dataflow pipeline.
 
-    The operation takes a tensor and a FIFO slot as inputs. The tensor's element
-    type and shape must match the FIFO slot's element type and capacity.
+    The operation takes a tensor or memref and a FIFO slot as inputs. The data's
+    element type and shape must match the FIFO slot's element type and capacity.
 
     Example:
     ```mlir
-    // Write to a FIFO slot with 64 f16 elements
+    // Write to a FIFO slot with 64 f16 elements from a tensor
     %data = arith.constant dense<1.0> : tensor<64xf16>
     %slot = ktdf.fifo.allocate() -> !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16>
     ktdf.write_to_fifo %data, %slot : tensor<64xf16>, !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16>
-    
+
+    // Write to a FIFO slot with 64 f16 elements from a memref
+    %slot = ktdf.fifo.allocate() -> !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16>
+    ktdf.write_to_fifo %buf, %slot : memref<64xf16>, !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16>
+
     // Write to a FIFO slot with dynamic size
     %size = arith.constant 8 : index
     %dyn_data = tensor.empty(%size) : tensor<?xf16>
@@ -213,7 +238,7 @@ def KTDF_WriteToFifoOp : KTDF_Op<"write_to_fifo", [
   }];
 
   let arguments = (ins
-    AnyRankedTensor:$data,
+    AnyTypeOf<[AnyRankedTensor, AnyMemRef]>:$data,
     KTDF_FifoSlotType:$fifo_slot
   );
 
