@@ -25,7 +25,9 @@
 
 include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/DestinationStyleOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/IR/OpAsmInterface.td"
 
 include "dataflow-scheduler/Dialect/KTDF/KTDFTypes.td"
 
@@ -1101,6 +1103,73 @@ def KTDF_TilingLinearizeIndexOp : KTDF_Op<"tiling.linearize_index",
     custom<BracketPairList>($ivs, $strides) attr-dict `:` type($result)
   }];
   let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// Opaque Operation
+//===----------------------------------------------------------------------===//
+
+def KTDF_OpaqueOp : KTDF_Op<"opaque", [
+  AttrSizedOperandSegments,
+  DestinationStyleOpInterface,
+  OpAsmOpInterface,
+  DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
+  DeclareOpInterfaceMethods<ConditionallySpeculatable>
+]> {
+  let summary = "Invokes an opaque intrinsic";
+  let description = [{
+    The `ktdf.opaque` operation is used to wrap calls to opaque intrinsics of
+    the target platform. It is a destination-passing-style operation that can
+    accept any number of operands to produce any number of outputs.
+
+    Aside from the DPS type invariants, the following is also required:
+
+    - Every opaque operation needs a template name that is understood by the
+      code generation back-end.
+    - An opaque operation may not have unknown side-effects, i.e., it must
+      follow `linalg.generic` access semantics.
+
+    Example:
+    ```mlir
+    %add = ktdf.opaque "ADD" -> tensor<64xf16>
+      ins(%lhs, %rhs: tensor<64xf16>, tensor<64xf16>)
+      outs(%out: tensor<64xf16>)
+    ```
+  }];
+
+  let arguments = (ins 
+    StrAttr:$template_name,
+    Variadic<AnyType>:$inputs,
+    Variadic<AnyShaped>:$outputs
+  );
+  let results = (outs Variadic<AnyRankedTensor>:$results);
+
+  let extraClassDeclaration = [{
+    //===------------------------------------------------------------------===//
+    // DestinationStyleOpInterface Methods
+    //===------------------------------------------------------------------===//
+
+    [[nodiscard]] auto getDpsInitsMutable() -> MutableOperandRange 
+    { 
+      return getOutputsMutable(); 
+    }
+
+    //===------------------------------------------------------------------===//
+    // OpAsmOpInterface Methods
+    //===------------------------------------------------------------------===//
+
+    void getAsmResultNames(OpAsmSetValueNameFn setNameFn) {
+      for (auto result : getResults()) {
+        setNameFn(result, getTemplateName());
+      }
+    }
+  }];
+
+  let assemblyFormat = [{
+    $template_name attr-dict (`->` type($results)^)?
+    `\n` ` ` ` ` `ins````(` ($inputs^ ```:` type($inputs))? `)` 
+    `\n` ` ` ` ` `outs````(` ($outputs^ ```:` type($outputs))? `)`
+  }];
 }
 
 #endif // DATAFLOW_SCHEDULER_DIALECTS_KTDF_KTDF_TD

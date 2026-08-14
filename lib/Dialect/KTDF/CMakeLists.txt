@@ -18,6 +18,8 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFDialect
   LINK_MLIR_LIBS
     MLIRArithDialect
     MLIRControlFlowInterfaces
+    MLIRSideEffectInterfaces
+    MLIRDestinationStyleOpInterface
     MLIRDialectUtils
     MLIRIR
     MLIRSCFDialect

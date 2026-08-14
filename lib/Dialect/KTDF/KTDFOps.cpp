@@ -24,12 +24,14 @@
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
 // clang-format on
 
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/DialectImplementation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 
 using namespace mlir;
 using namespace mlir::ktdf;
@@ -881,4 +883,33 @@ auto SelectMemrefOp::fold(FoldAdaptor adaptor) -> OpFoldResult {
     return {};
   }
   return getCandidates()[phase];
+}
+
+//===----------------------------------------------------------------------===//
+// OpaqueOp
+//===----------------------------------------------------------------------===//
+
+void OpaqueOp::getEffects(
+    SmallVectorImpl<MemoryEffects::EffectInstance>& effects) {
+  for (auto& input : getInputsMutable()) {
+    if (!isa<MemRefType>(input.get().getType())) {
+      continue;
+    }
+
+    effects.emplace_back(MemoryEffects::Read::get(), &input);
+  }
+
+  for (auto& output : getOutputsMutable()) {
+    if (!isa<MemRefType>(output.get().getType())) {
+      continue;
+    }
+
+    effects.emplace_back(MemoryEffects::Read::get(), &output);
+    effects.emplace_back(MemoryEffects::Write::get(), &output);
+  }
+}
+
+auto OpaqueOp::getSpeculatability() -> Speculation::Speculatability {
+  return hasPureTensorSemantics() ? Speculation::Speculatable
+                                  : Speculation::NotSpeculatable;
 }

@@ -26,6 +26,7 @@
 #include <mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
+#include <mlir/Interfaces/DestinationStyleOpInterface.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
 #include "dataflow-scheduler/Dialect/KTDF/KTDFTypes.h"  // IWYU pragma: keep
