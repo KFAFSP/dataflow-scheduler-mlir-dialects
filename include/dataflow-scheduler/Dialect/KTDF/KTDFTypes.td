@@ -109,8 +109,8 @@ def KTDF_FifoSlotType : KTDF_Type<"FifoSlot", "fifo.slot"> {
     %size = arith.constant 8 : index
     %slot1 = ktdf.fifo.allocate(%size) -> !ktdf.fifo.slot<SFU -> L1SU, ?xf16>
 
-    // A FIFO slot from DDR memory space to SFU
-    %slot2 = ktdf.fifo.allocate() -> !ktdf.fifo.slot<#ktdp.spyre_memory_space<DDR> -> SFU, 64xf16>
+    // A FIFO slot from global memory space to SFU
+    %slot2 = ktdf.fifo.allocate() -> !ktdf.fifo.slot<#ktdp.memory_space<global> -> SFU, 64xf16>
     ```
   }];
 
