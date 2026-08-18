@@ -57,6 +57,58 @@ auto testFeature(MLIRContext* context, StringRef provided, StringRef required)
 
 }  // namespace
 
+TEST_CASE("mlir::ktdf_arch::feature::Load") {
+  // Setup an MLIR context.
+  DialectRegistry registry;
+  registry.insert<ktdf_arch::KTDFArchDialect>();
+  MLIRContext context(registry);
+  context.allowUnregisteredDialects();
+  context.loadAllAvailableDialects();
+
+  SUBCASE("access_granularity") {
+    CHECK(testFeature<feature::Load>(
+        &context, "{ access_granularity = #ktdf_arch.map<\"A\" = []> }",
+        "{ }"));
+    CHECK(testFeature<feature::Load>(
+        &context, "{ }",
+        "{ access_granularity = #ktdf_arch.map<\"A\" = []> }"));
+    CHECK(testFeature<feature::Load>(
+        &context,
+        "{ access_granularity = #ktdf_arch.map<\"A\" = [{size_in_words = 1}]> "
+        "}",
+        "{ access_granularity = #ktdf_arch.map<\"A\" = [{size_in_words = 1}]> "
+        "}"));
+    CHECK(testFeature<feature::Load>(
+        &context, "{ }", "{ word_size = #ktdf_arch.map<\"A\" = 1> }"));
+    CHECK(testFeature<feature::Load>(
+        &context, "{ word_size = #ktdf_arch.map<> }",
+        "{ word_size = #ktdf_arch.map<\"A\" = 1> }"));
+
+    CHECK_FALSE(testFeature<feature::Load>(
+        &context, "{ }",
+        "{ access_granularity = #ktdf_arch.map<\"A\" = [{}]> }"));
+    CHECK_FALSE(testFeature<feature::Load>(
+        &context,
+        "{ access_granularity = #ktdf_arch.map<\"A\" = [{size_in_words = 8, "
+        "align_in_words = 8}]> }",
+        "{ access_granularity = #ktdf_arch.map<\"A\" = [{size_in_words = 8, "
+        "align_in_words = 1}]> }"));
+    CHECK_FALSE(testFeature<feature::Load>(
+        &context,
+        "{ access_granularity = #ktdf_arch.map<\"A\" = [{size_in_words = 1}]> "
+        "}",
+        "{ access_granularity = #ktdf_arch.map<\"A\" = [{size_in_words = 8}]> "
+        "}"));
+
+    CHECK(testFeature<feature::Load>(
+        &context,
+        "{ access_granularity = #ktdf_arch.map<\"A\" = [{size_in_words = 8, "
+        "align_in_words = 4}]> }",
+        "{ access_granularity = #ktdf_arch.map<\"A\" = [{size_in_words = 4, "
+        "align_in_words = 8}]> }"));
+  }
+}
+
 TEST_CASE("mlir::ktdf_arch::feature::SIMD") {
   // Setup an MLIR context.
   DialectRegistry registry;

@@ -437,9 +437,7 @@ def KTDFArch_MemoryOp : KTDFArch_NodeOp<
 
 def KTDFArch_ExecutionUnitOp : KTDFArch_NodeOp<
   "exec_unit", 
-  KTDFArch_ExecutionUnitType,
-  [],
-  (ins OptionalAttr<UnitAttr>:$load_store)
+  KTDFArch_ExecutionUnitType
 > {
   let summary = "Defines an execution unit resource.";
   let description = [{
@@ -451,34 +449,20 @@ def KTDFArch_ExecutionUnitOp : KTDFArch_NodeOp<
     to establish connections with other compute resources outside of their
     scope without needing to break the local symmetry by hoisting them.
 
-    Execution units can be designated as `load_store` units, which indicates
-    that they should not be considered for tasks not involving data movement.
-
     Example:
     ```
     ktdf_arch.device @my_device {
       %exec_unit = exec_unit
-      %load_store = exec_unit { load_store }
     }
     ```
   }];
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<(ins CArg<"bool", "false">:$load_store), [{
+    OpBuilder<(ins), [{
       $_state.types.push_back(ExecutionUnitType::get($_builder.getContext()));
-      if (load_store) {
-        $_state.addAttribute(getLoadStoreAttrName($_state.name), $_builder.getUnitAttr());
-      }
     }]>
   ];
-
-  let extraClassDeclaration = defaultOpAsmImpl # [{
-    /// Gets a value indicating whether this is a load/store unit.
-    [[nodiscard]] auto isLoadStore() -> bool {
-      return getLoadStore().value_or(false);
-    }
-  }];
 }
 
 def KTDFArch_SwitchOp : KTDFArch_NodeOp<
@@ -501,7 +485,7 @@ def KTDFArch_SwitchOp : KTDFArch_NodeOp<
     ```
     ktdf_arch.device @my_device {
       %sw0:2 = switch [2]
-      %sw1:2 = switch [2] { connectivity = dense<[[0, 1],[1, 0]]> : tensor<2x2xi1> }
+      %sw1:2 = switch [2] { connectivity = dense<[[0, 1], [1, 0]]> : tensor<2x2xi1> }
       %sw2:4 = switch [4] { connectivity = sparse<[[0, 2], [0, 3], [1, 2]], true> : tensor<4x4xi1> }
     }
     ```

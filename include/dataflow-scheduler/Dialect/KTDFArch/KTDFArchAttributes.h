@@ -110,6 +110,50 @@ struct AdjacencyMatrixAttr : ElementsAttr {
 
 namespace mlir::ktdf_arch {
 
+// Named constraint for an ArrayAttr with constrained value types.
+template <class Value>
+struct TypedArrayAttr : ArrayAttr {
+  using ValueType = ArrayRef<Value>;
+
+  static_assert(std::is_base_of_v<Attribute, Value>);
+
+  [[nodiscard]] static auto classof(Attribute attr) -> bool {
+    const auto array_attr = dyn_cast<ArrayAttr>(attr);
+    return array_attr && classof(array_attr);
+  }
+  [[nodiscard]] static auto classof(ArrayAttr attr) -> bool {
+    return llvm::all_of(attr.getValue(), [](const auto& value) -> bool {
+      return isa<Value>(value);
+    });
+  }
+
+  using ArrayAttr::ArrayAttr;
+
+  static auto get(MLIRContext* context, ArrayRef<Value> values) -> TypedAttr {
+    return cast<TypedArrayAttr>(ArrayAttr::get(context, values));
+  }
+
+  [[nodiscard]] auto getValue() const -> ArrayRef<Value> {
+    const auto base = ArrayAttr::getValue();
+    return ArrayRef<Value>(reinterpret_cast<const Value*>(base.data()),
+                           base.size());
+  }
+  template <class T = typename Value::ValueType>
+  [[nodiscard]] auto getAsValueRange() const -> T {
+    return ArrayAttr::getAsValueRange<Value>();
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Container Interface
+  //===--------------------------------------------------------------------===//
+
+  using value_type = Value;
+  using iterator = typename ArrayRef<Value>::iterator;
+
+  [[nodiscard]] auto begin() const -> iterator { return getValue().begin(); }
+  [[nodiscard]] auto end() const -> iterator { return getValue().end(); }
+};
+
 /// Named constraint for a MapAttr with constrained key and value types.
 template <class Key, class Value>
 struct TypedMapAttr : MapAttr {
