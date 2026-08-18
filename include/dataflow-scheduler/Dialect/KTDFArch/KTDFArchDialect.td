@@ -124,6 +124,10 @@ def KTDFArch_Dialect : Dialect {
     |   `depth` | `i64 > 0`? | Maximum number of in-flight transfers.
   }];
 
+  let dependentDialects = [
+    "pdl::PDLDialect"
+  ];
+
   let useDefaultTypePrinterParser = 1;
   let useDefaultAttributePrinterParser = 1;
 

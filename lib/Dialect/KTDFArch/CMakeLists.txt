@@ -1,4 +1,5 @@
 add_subdirectory(Analysis)
+add_subdirectory(Transforms)
 
 add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFArchDialect
     KTDFArchAttributes.cpp
@@ -20,5 +21,6 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFArchDialect
 
   LINK_MLIR_LIBS
     MLIRIR
-    MLIRControlFlowInterfaces  
+    MLIRControlFlowInterfaces
+    MLIRPDLDialect
 )

@@ -20,6 +20,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/LogicalResult.h>
+#include <mlir/Dialect/PDL/IR/PDL.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Diagnostics.h>

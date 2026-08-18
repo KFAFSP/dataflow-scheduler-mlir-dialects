@@ -51,6 +51,10 @@ struct IsSubgraph : mlir::OpTrait::TraitBase<Derived, IsSubgraph> {
   }
 };
 
+/// Trait for operations that provide meta information.
+template <class Derived>
+struct IsMeta : mlir::OpTrait::TraitBase<Derived, IsMeta> {};
+
 }  // namespace mlir::ktdf_arch
 
 //===----------------------------------------------------------------------===//

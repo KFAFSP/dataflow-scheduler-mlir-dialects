@@ -33,6 +33,7 @@
 #ifndef DATAFLOW_SCHEDULER_DIALECT_KTDFARCH_ANALYSIS_DEVICEMANAGER_H_
 #define DATAFLOW_SCHEDULER_DIALECT_KTDFARCH_ANALYSIS_DEVICEMANAGER_H_
 
+#include <llvm/ADT/PointerIntPair.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Mutex.h>
 #include <mlir/IR/MLIRContext.h>
@@ -97,6 +98,11 @@ class Device : private DeviceOp {
   [[nodiscard]] auto getContext() const -> MLIRContext* {
     return getDeclaration()->getContext();
   }
+  /// Obtains a descriptive location for the device.
+  ///
+  /// If the device is imported, the location of the declaration will be fused
+  /// with that of the definition.
+  [[nodiscard]] auto getLoc() const -> Location;
 
   [[nodiscard]] auto getAttr(StringRef name) const -> Attribute {
     return getDefinition() ? getDefinition()->getAttr(name)
@@ -262,6 +268,124 @@ class DeviceManager {
   view_map_type views_;
   llvm::sys::SmartMutex<true> mutex_;
 };
+
+//===----------------------------------------------------------------------===//
+// Reference Wrappers
+//===----------------------------------------------------------------------===//
+
+/// Helper that manages a reference to a DeviceManager.
+///
+/// In well-formed pipelines, there is exactly one persistent DeviceManager that
+/// is instantiated as an analysis on the `builtin.module` that contains the
+/// device declarations. However, passes may find themselves nested below that
+/// module without the ability to instantiate the DeviceManager if it has not
+/// yet been created.
+///
+/// To alleviate this problem in testing environments, such as the `opt` driver,
+/// this class provides a way to obtain the parent DeviceManager or to create an
+/// ephemeral one tied to the lifetime of this object.
+class DeviceManagerRef {
+ public:
+  /// Creates and takes ownership of an ephemeral DeviceManager on @p root .
+  ///
+  /// The lifetime of the resulting DeviceManager is tied to the returned
+  /// instance, meaning the DeviceManager must only be used locally.
+  explicit DeviceManagerRef(Operation* root);
+  /// Creates a reference to an (ephemeral) DeviceManager.
+  ///
+  /// If there is a DeviceManager cached for @p root in @p analyses , it will
+  /// be obtained as a non-owning reference. Otherwise, an ephemeral
+  /// DeviceManager will be constructed and returned as if by calling
+  /// `create(Operation *)` onf @p root .
+  DeviceManagerRef(Operation* root, AnalysisManager analyses);
+
+  /// Binds a non-owning reference to @p manager .
+  /*implicit*/ DeviceManagerRef(DeviceManager& manager)
+      : DeviceManagerRef(&manager, false) {}
+
+  DeviceManagerRef() = delete;
+  DeviceManagerRef(DeviceManagerRef&&) = delete;
+  DeviceManagerRef(const DeviceManagerRef&) = delete;
+
+  auto operator=(DeviceManagerRef&&) = delete;
+  auto operator=(const DeviceManager&) = delete;
+
+  ~DeviceManagerRef();
+
+  /// Gets the referenced DeviceManager.
+  [[nodiscard]] auto get() const -> DeviceManager& {
+    return *ptr_.getPointer();
+  }
+  /*implicit*/ operator DeviceManager&() const { return get(); }
+  /*implicit*/ operator DeviceManager*() const { return &get(); }
+
+  auto operator->() const -> DeviceManager* { return ptr_.getPointer(); }
+
+ private:
+  explicit DeviceManagerRef(DeviceManager* manager, bool owned)
+      : ptr_(manager, owned ? 1 : 0) {}
+
+  llvm::PointerIntPair<DeviceManager*, 1> ptr_;
+};
+
+/// Helper that manages a reference to a Device.
+///
+/// Similar to DeviceManagerRef, this class wraps a reference to a (potentially
+/// owned) Device and its DeviceManager.
+class DeviceRef {
+ public:
+  /// Creates a reference to an (ephemeral) Device.
+  ///
+  /// If there is a DeviceManager cached for the parent of @p declaration , it
+  /// will be used to obtain a reference to the persistent Device declared by
+  /// @p declaration . Otherwise, an ephemeral DeviceManager will be constructed
+  /// that will construct an ephemeral Device.
+  DeviceRef(DeviceOp declaration, AnalysisManager analyses);
+
+  DeviceRef() = delete;
+  DeviceRef(DeviceRef&&) = delete;
+  DeviceRef(const DeviceRef&) = delete;
+
+  auto operator=(DeviceRef&&) = delete;
+  auto operator=(const DeviceRef&) = delete;
+
+  ~DeviceRef() = default;
+
+  /// Gets the underlying DeviceManager.
+  [[nodiscard]] auto getDeviceManager() const -> DeviceManager& {
+    return manager_;
+  }
+
+  /// Gets or creates the @p View for this device.
+  template <class View>
+  auto getOrCreateView() -> View& {
+    return getDeviceManager().getOrCreateView<View>(device_);
+  }
+
+  /// Gets the referenced Device.
+  [[nodiscard]] auto get() const -> const Device& { return device_; }
+  /*implicit*/ operator const Device&() const { return get(); }
+  /*implicit*/ operator const Device*() const { return &get(); }
+
+  auto operator->() const -> const Device* { return &device_; }
+
+ private:
+  DeviceManagerRef manager_;
+  const Device& device_;
+};
+
+/// Finds the nearest device declaration for @p op .
+///
+/// This function will examine every operation starting from @p op up to the
+/// root, returning the first DeviceOp referenced by a `ktdf_arch.maps_to`
+/// attribute.
+///
+/// If no such attribute is found, but there is only one DeviceOp reachable
+/// on this path, this DeviceOp is returned.
+///
+/// @retval DeviceOp  Unambiguous device declaration referenced by @p op .
+/// @retval nullptr   No (unambiguous) device declaration found.
+[[nodiscard]] auto findDeviceDeclarationFor(Operation* op) -> DeviceOp;
 
 }  // namespace mlir::ktdf_arch
 

@@ -30,6 +30,7 @@
 #include "dataflow-scheduler/Dialect/Dataflow/DataflowDialect.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDFDialect.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchDialect.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/Transforms/Passes.h"
 #include "dataflow-scheduler/Dialect/KTDFLowering/KTDFLoweringDialect.h"
 #include "dataflow-scheduler/Dialect/Symbol/Symbol.h"
 #include "dataflow-scheduler/Dialect/Uniform/Uniform.h"
@@ -39,6 +40,7 @@ using namespace mlir;
 
 auto main(int argc, char** argv) -> int {
   registerAllPasses();
+  ktdf_arch::registerKTDFArchPasses();
 
   DialectRegistry registry;
   registry.insert<agen::AgenDialect, dataflow::DataflowDialect,

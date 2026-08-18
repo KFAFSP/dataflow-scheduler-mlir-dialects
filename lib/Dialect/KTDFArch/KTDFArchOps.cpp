@@ -20,9 +20,12 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/LogicalResult.h>
+#include <mlir/Dialect/PDL/IR/PDL.h>
+#include <mlir/Dialect/PDL/IR/PDLOps.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinDialect.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectImplementation.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OpImplementation.h>
@@ -44,7 +47,11 @@ using namespace mlir::ktdf_arch;
 auto mlir::ktdf_arch::verifySubgraph(Operation* op) -> LogicalResult {
   for (auto& region : op->getRegions()) {
     for (auto& child : region.getOps()) {
-      if (!child.hasTrait<OpTrait::IsTerminator>() && !isa<Resource>(child)) {
+      if (child.hasTrait<OpTrait::IsTerminator>() || child.hasTrait<IsMeta>()) {
+        continue;
+      }
+
+      if (!isa<Resource>(child)) {
         auto diag = op->emitOpError("expects child ops to be resources");
         diag.attachNote(child.getLoc()) << "unexpected child is here";
         return diag;
@@ -440,6 +447,39 @@ auto SwitchOp::verify() -> LogicalResult {
 auto DatapathOp::verify() -> LogicalResult {
   if (getSource() == getTarget()) {
     return emitOpError("can't link resource to itself");
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// PatternsOp
+//===----------------------------------------------------------------------===//
+
+void PatternsOp::build(OpBuilder& builder, OperationState& result,
+                       ArrayRef<StringRef> groups,
+                       function_ref<void(OpBuilder&, Location)> body_builder) {
+  auto& props = result.getOrAddProperties<Properties>();
+  props.groups = builder.getStrArrayAttr(groups);
+
+  auto& body = result.addRegion()->emplaceBlock();
+
+  if (body_builder) {
+    OpBuilder::InsertionGuard guard(builder);
+
+    builder.setInsertionPointToStart(&body);
+    body_builder(builder, result.location);
+  }
+}
+
+auto PatternsOp::verifyRegions() -> LogicalResult {
+  for (auto& child : getOps()) {
+    if (!isa<pdl::PatternOp>(child)) {
+      auto diag = emitOpError("expects child ops to be '")
+                  << pdl::PatternOp::getOperationName() << "'";
+      diag.attachNote(child.getLoc()) << "unexpected child is here";
+      return diag;
+    }
   }
 
   return success();

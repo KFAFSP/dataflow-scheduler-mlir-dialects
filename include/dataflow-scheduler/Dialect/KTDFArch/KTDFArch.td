@@ -52,6 +52,10 @@ def KTDFArch_IsSubgraph : NativeOpTrait<"IsSubgraph">, StructuralOpTrait {
 
 def KTDFArch_Subgraph : TraitList<[OpAsmOpInterface, KTDFArch_IsSubgraph]>;
 
+def KTDFArch_IsMeta : NativeOpTrait<"IsMeta"> {
+  let cppNamespace = "::mlir::ktdf_arch";
+}
+
 //===----------------------------------------------------------------------===//
 // Operations
 //===----------------------------------------------------------------------===//
@@ -586,6 +590,79 @@ def KTDFArch_DatapathOp : KTDFArch_LinkOp<"datapath"> {
     [[nodiscard]] auto getTargets() -> OperandRange { 
       return OperandRange{getOperands().begin() + 1, getOperands().end()}; 
     }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// Meta Operations
+//===----------------------------------------------------------------------===//
+
+def KTDFArch_PatternsOp : KTDFArch_Op<"patterns", [
+  IsolatedFromAbove,
+  SingleBlock,
+  NoTerminator,
+  KTDFArch_IsMeta,
+  HasParent<"DeviceOp">
+]> {
+  let summary = "Defines device-specific rewrite patterns.";
+  let description = [{
+    The `ktdf_arch.patterns` container can be used to provide `pdl.pattern`s
+    which implement device-specific rewrites (under well-known group names)
+    that the back-end should apply. Patterns should be used sparingly, but can 
+    be used effectively to enable device-specific intrinsics and workarounds.
+
+    Each`ktdf_arch.patterns` operation defines a set of patterns belonging to
+    zero or more groups. A pattern will only be selected for rewriting when at
+    least one of its groups is enabled. A pattern without groups will always be
+    enabled.
+
+    Example:
+    ```
+    ktdf_arch.device @device {
+      patterns {}
+      patterns ["a", "b"] {}
+      patterns ["b"] {}
+    }
+    ```
+
+    #### Native PDL Functions
+
+    The PDL pattern interpreter has access to the following native functions:
+
+    - `ktdf_arch.mapped_to(Operation*) -> Attribute`
+
+      Binds the `ktdf_arch.maps_to` attribute.
+    - `ktdf_arch.has_feature(Operation*, StringAttr) -> Attribute`
+
+      Binds the feature with the given name.
+    - `ktdf_arch.has_feature(Operation*, StringAttr, Attribute) -> Attribute`
+
+      Binds the feature satisfying the given requirement.
+    - `ktdf_arch.map_to(Operation*, Attribute)`
+
+      Sets the `ktdf_arch.maps_to` attribute.
+    - `ktdf_arch.set_feature(Operation*, StringAttr, Attribute)`
+    
+      Sets the feature with the given name. 
+  }];
+
+  let arguments = (ins 
+    DefaultValuedAttr<StrArrayAttr, "{}">:$groups
+  );
+  let regions = (region SizedRegion<1>:$region);
+
+  let hasRegionVerifier = 1;
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<(ins 
+      CArg<"ArrayRef<StringRef>", "{}">:$groups,
+      CArg<"function_ref<void(OpBuilder&, Location)>", "nullptr">:$body_builder
+    )>
+  ];
+
+  let assemblyFormat = [{
+    ($groups^)? attr-dict-with-keyword $region
   }];
 }
 

@@ -102,6 +102,14 @@ ktdf_arch.device @my_device {
 
 // -----
 
+ktdf_arch.device @device {
+  patterns {}
+  patterns ["a", "b"] {}
+  patterns ["b"] {}
+}
+
+// -----
+
 func.func private @map_attr() attributes { 
   map = #ktdf_arch.map<f32 = 1, { hello } = "world"> 
 }
