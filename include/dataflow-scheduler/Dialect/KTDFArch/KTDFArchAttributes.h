@@ -139,7 +139,7 @@ struct TypedArrayAttr : ArrayAttr {
                            base.size());
   }
   template <class T = typename Value::ValueType>
-  [[nodiscard]] auto getAsValueRange() const -> T {
+  [[nodiscard]] auto getAsValueRange() const {
     return ArrayAttr::getAsValueRange<Value>();
   }
 
