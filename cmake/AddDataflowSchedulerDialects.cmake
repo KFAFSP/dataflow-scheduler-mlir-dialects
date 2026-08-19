@@ -27,7 +27,7 @@ set(PROJECT_INCLUDE_DIRS
 # Creates a TableGen target and adds it to dataflow-scheduler-dialects-headers.
 function(add_dataflow_scheduler_dialects_tablegen_target name)
   add_public_tablegen_target(${name})
-  set(TABLEGEN_OUTPUT "")
+  set(TABLEGEN_OUTPUT "" PARENT_SCOPE)
   add_dependencies(dataflow-scheduler-dialects-headers ${name})
 endfunction()
 
