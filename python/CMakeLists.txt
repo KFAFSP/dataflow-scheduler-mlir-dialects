@@ -89,6 +89,15 @@ declare_mlir_dialect_python_bindings(
 declare_mlir_dialect_python_bindings(
   ADD_TO_PARENT DataflowSchedulerDialectsPythonSources.Dialects
   ROOT_DIR "${PYTHON_ROOT_DIR}"
+  TD_FILE dialects/SymbolOps.td
+  SOURCES 
+    dialects/symbol.py
+  DIALECT_NAME symbol
+)
+
+declare_mlir_dialect_python_bindings(
+  ADD_TO_PARENT DataflowSchedulerDialectsPythonSources.Dialects
+  ROOT_DIR "${PYTHON_ROOT_DIR}"
   TD_FILE dialects/UniformOps.td
   SOURCES 
     dialects/uniform.py

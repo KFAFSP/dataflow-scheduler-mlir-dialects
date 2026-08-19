@@ -1,5 +1,3 @@
-# RUN: python %s
-
 #
 # Part of the Dataflow Scheduler MLIR Dialects project.
 #
@@ -16,17 +14,4 @@
 # limitations under the License.
 #
 
-# This is a trivial test that checks whether all the packages we expected to
-# produce can be imported.
-
-import mlir_scheduler
-import mlir_scheduler.ir
-
-import mlir_scheduler.dialects.agen
-import mlir_scheduler.dialects.dataflow
-import mlir_scheduler.dialects.ktdf
-import mlir_scheduler.dialects.ktdf_arch
-import mlir_scheduler.dialects.ktdf_lowering
-import mlir_scheduler.dialects.symbol
-import mlir_scheduler.dialects.uniform
-import mlir_scheduler.dialects.vectorchain
+from ._symbol_ops_gen import *
