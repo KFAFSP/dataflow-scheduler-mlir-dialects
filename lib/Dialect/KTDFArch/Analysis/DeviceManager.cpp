@@ -301,10 +301,10 @@ auto ktdf_arch::findDeviceDeclarationFor(Operation* op) -> DeviceOp {
           // The module contains exactly one device declaration, it could be
           // the only reachable one.
           only = *devices.begin();
+        } else {
+          // There are at least 2 reachable device declarations.
+          return nullptr;
         }
-
-        // There are at least 2 reachable device declarations.
-        return nullptr;
       }
     }
 

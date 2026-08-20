@@ -19,9 +19,9 @@
 #include "dataflow-scheduler/Dialect/KTDFArch/Transforms/ApplyPatterns.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/StringSet.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/DebugLog.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/PDL/IR/PDL.h>
 #include <mlir/Dialect/PDL/IR/PDLOps.h>
@@ -126,6 +126,25 @@ void ktdf_arch::registerNativeFunctions(PDLPatternModule& patterns) {
 }
 
 //===----------------------------------------------------------------------===//
+// PatternGroups
+//===----------------------------------------------------------------------===//
+
+auto PatternGroups::contains(StringRef group) const -> bool {
+  const auto* const it = llvm::lower_bound(groups_, group);
+  return it != groups_.end() && *it == group;
+}
+
+void PatternGroups::initialize(SmallVectorImpl<std::string>& groups) {
+  llvm::raw_svector_ostream os(key_);
+  llvm::sort(groups);
+  llvm::interleaveComma(groups, os, [&](StringRef group) {
+    auto* const begin = key_.end();
+    key_.append(group);
+    groups_.emplace_back(begin, group.size());
+  });
+}
+
+//===----------------------------------------------------------------------===//
 // ktdf_arch::getPatterns
 //===----------------------------------------------------------------------===//
 
@@ -146,7 +165,7 @@ auto clonePatterns(PatternsOp from, PDLPatternModule& to) -> size_t {
 }  // namespace
 
 auto ktdf_arch::getPatterns(const Device& device, PDLPatternModule& patterns,
-                            const StringSet<>& enabled_groups) -> size_t {
+                            const PatternGroups& enabled_groups) -> size_t {
   // Ensure there is a module to clone into.
   if (!patterns.getModule()) {
     patterns.mergeIn(PDLPatternModule(ModuleOp::create(device.getLoc())));
@@ -170,10 +189,37 @@ auto ktdf_arch::getPatterns(const Device& device, PDLPatternModule& patterns,
   return result;
 }
 
-auto ktdf_arch::getPatterns(const Device& device, PDLPatternModule& patterns,
-                            ArrayRef<StringRef> enabled_groups) -> size_t {
-  return getPatterns(device, patterns,
-                     StringSet<>(llvm::from_range, enabled_groups));
+//===----------------------------------------------------------------------===//
+// PatternCache
+//===----------------------------------------------------------------------===//
+
+auto PatternCache::get(const PatternGroups& enabled_groups)
+    -> FrozenRewritePatternSet {
+  llvm::sys::SmartScopedLock<true> lock(mutex_);
+
+  if (const auto it = map_.find(enabled_groups); it != map_.end()) {
+    return it->second;
+  }
+
+  PDLPatternModule pdl_patterns;
+  const auto num_patterns =
+      getPatterns(getDevice(), pdl_patterns, enabled_groups);
+
+  LDBG_OS([&](llvm::raw_ostream& os) {
+    os << "selecting " << num_patterns << " pattern(s)";
+    if (!enabled_groups.empty()) {
+      os << " in group(s) ";
+      llvm::interleaveComma(enabled_groups, os);
+    }
+    os << " of device '" << getDevice().getName() << "'";
+  });
+
+  FrozenRewritePatternSet result;
+  if (num_patterns > 0) {
+    result = FrozenRewritePatternSet(std::move(pdl_patterns));
+  }
+
+  return map_[enabled_groups] = result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -190,36 +236,22 @@ struct ApplyPatternsPass
     // Find the device that this function maps to.
     auto declaration = findDeviceDeclarationFor(getOperation());
     if (!declaration) {
-      getOperation()->emitError("unable to locate device");
-      signalPassFailure();
       return;
     }
     DeviceRef device(declaration, getAnalysisManager());
-
     LDBG() << "processing "
            << OpWithFlags(getOperation(), OpPrintingFlags().skipRegions())
            << " with device " << declaration.getName();
 
-    // Collect all the patterns to be applied.
-    PDLPatternModule pdl_patterns;
-    const auto num_patterns = getPatterns(
-        device, pdl_patterns, StringSet<>(llvm::from_range, enabled_groups));
-    if (num_patterns == 0) {
-      return;
-    }
-    LDBG_OS([&](llvm::raw_ostream& os) {
-      os << "applying " << num_patterns << " pattern(s)";
-      if (!enabled_groups.empty()) {
-        os << " in group(s) ";
-        llvm::interleaveComma(enabled_groups, os);
-      }
-    });
+    // Get the (cached) rewrite pattern set. This prevents cloning the PDL
+    // module
+    const auto patterns = device.getOrCreateView<PatternCache>().get(
+        PatternGroups(llvm::from_range, enabled_groups));
 
     // Run all the patterns.
     auto changed = false;
-    if (failed(applyPatternsGreedily(
-            getOperation(), FrozenRewritePatternSet(std::move(pdl_patterns)),
-            GreedyRewriteConfig(), &changed))) {
+    if (failed(applyPatternsGreedily(getOperation(), patterns,
+                                     GreedyRewriteConfig(), &changed))) {
       signalPassFailure();
       return;
     }
@@ -231,3 +263,12 @@ struct ApplyPatternsPass
 };
 
 }  // namespace
+
+auto ktdf_arch::createApplyPatternsPass(
+    std::initializer_list<StringRef> enabled_groups) -> std::unique_ptr<Pass> {
+  ApplyPatternsPassOptions options;
+  for (auto group : enabled_groups) {
+    options.enabled_groups.emplace_back(group.str());
+  }
+  return createApplyPatternsPass(options);
+}
