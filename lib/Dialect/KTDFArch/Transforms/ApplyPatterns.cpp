@@ -263,3 +263,12 @@ struct ApplyPatternsPass
 };
 
 }  // namespace
+
+auto ktdf_arch::createApplyPatternsPass(
+    std::initializer_list<StringRef> enabled_groups) -> std::unique_ptr<Pass> {
+  ApplyPatternsPassOptions options;
+  for (auto group : enabled_groups) {
+    options.enabled_groups.emplace_back(group.str());
+  }
+  return createApplyPatternsPass(options);
+}

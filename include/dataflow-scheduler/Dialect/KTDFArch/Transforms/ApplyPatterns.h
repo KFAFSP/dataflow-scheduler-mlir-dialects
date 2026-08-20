@@ -26,6 +26,8 @@
 #include <mlir/Rewrite/FrozenRewritePatternSet.h>
 #include <mlir/Support/LLVM.h>
 
+#include <initializer_list>
+
 #include "dataflow-scheduler/Dialect/KTDFArch/Analysis/DeviceManager.h"
 
 namespace mlir::ktdf_arch {
@@ -40,6 +42,8 @@ class PatternGroups {
  public:
   /*implicit*/ PatternGroups(ArrayRef<StringRef> groups)
       : PatternGroups(llvm::from_range, groups) {}
+  /*implicit*/ PatternGroups(std::initializer_list<StringRef> groups)
+      : PatternGroups(llvm::from_range, groups) {}
   template <class Range>
   explicit PatternGroups(llvm::from_range_t, Range&& range)
       : PatternGroups(llvm::adl_begin(range), llvm::adl_end(range)) {}
@@ -50,6 +54,9 @@ class PatternGroups {
   }
 
   [[nodiscard]] auto contains(StringRef group) const -> bool;
+
+  [[nodiscard]] auto asStringRef() const -> StringRef { return key_; }
+  /*implict*/ operator StringRef() const { return asStringRef(); }
 
   [[nodiscard]] auto operator==(const PatternGroups& rhs) const -> bool {
     return key_ == rhs.key_;
@@ -116,6 +123,10 @@ class PatternCache : public DeviceView {
   llvm::sys::SmartMutex<true> mutex_;
   map_type map_;
 };
+
+/// Creates a `ktdfarch-apply-patterns` pass instance for @p enabled_groups .
+[[nodiscard]] auto createApplyPatternsPass(
+    std::initializer_list<StringRef> enabled_groups) -> std::unique_ptr<Pass>;
 
 }  // namespace mlir::ktdf_arch
 
