@@ -23,4 +23,5 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFArchDialect
     MLIRIR
     MLIRControlFlowInterfaces
     MLIRPDLDialect
+    MLIRInferTypeOpInterface
 )
