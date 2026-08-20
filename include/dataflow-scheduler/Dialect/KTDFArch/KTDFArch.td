@@ -323,7 +323,7 @@ def KTDFArch_YieldOp : KTDFArch_Op<"yield", [
   Terminator, 
   HasParent<"GroupOp">
 ]> {
-  let summary = "Yields execution unit resources from a group.";
+  let summary = "Yields resources from a subgraph.";
   let description = [{
     Example:
     ```
@@ -341,7 +341,7 @@ def KTDFArch_YieldOp : KTDFArch_Op<"yield", [
     ```
   }];
 
-  let arguments = (ins Variadic<KTDFArch_ExecutionUnitType>:$operands);
+  let arguments = (ins Variadic<KTDFArch_EndpointType>:$operands);
 
   let skipDefaultBuilders = 1;
   let builders = [
@@ -350,7 +350,7 @@ def KTDFArch_YieldOp : KTDFArch_Op<"yield", [
     }]>
   ];
 
-  let assemblyFormat = "$operands attr-dict";
+  let hasCustomAssemblyFormat = 1;
 }
 
 //===----------------------------------------------------------------------===//

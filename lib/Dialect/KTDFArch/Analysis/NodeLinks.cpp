@@ -45,7 +45,7 @@ auto visitLinksImpl(Value value,
     // need to ascend from the GroupOp to find more links.
     if (auto yield = dyn_cast<YieldOp>(use.getOwner()); yield) {
       if (!visitLinksImpl(
-              yield.getParentOp()->getResult(use.getOperandNumber()),
+              yield->getParentOp()->getResult(use.getOperandNumber()),
               callback)) {
         return false;
       }
