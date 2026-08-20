@@ -19,6 +19,7 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFArchTransfo
     MLIRFuncDialect
     MLIRIR
     MLIRPass
+    MLIRRewrite
     MLIRPDLDialect
     MLIRPDLInterpDialect
 )
