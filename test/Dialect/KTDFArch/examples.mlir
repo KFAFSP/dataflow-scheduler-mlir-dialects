@@ -1,4 +1,4 @@
-// RUN: dataflow-scheduler-dialects-opt --allow-unregistered-dialect --split-input-file %s | dataflow-scheduler-dialects-opt --allow-unregistered-dialect
+// RUN: dataflow-scheduler-dialects-opt --allow-unregistered-dialect --split-input-file %s | dataflow-scheduler-dialects-opt --allow-unregistered-dialect --split-input-file
 
 ktdf_arch.device @my_device {
   // Define one memory and one compute resource.
@@ -106,6 +106,44 @@ ktdf_arch.device @device {
   patterns {}
   patterns ["a", "b"] {}
   patterns ["b"] {}
+}
+
+// -----
+
+ktdf_arch.device @device {
+  %ring = neighborhood %self : (port, exec_unit)[3] {
+    %exec = group share() {
+      %local = memory {kind = "local"}
+      %exec = exec_unit
+      yield %exec
+    } -> exec_unit
+
+    %sw:3 = switch [3]
+    datapath %sw#2 to %exec : port, exec_unit
+    datapath %exec to %sw#2 : exec_unit, port
+
+    %prev_out, %prev_exec = neighbor affine_map<(d0) -> ((d0 - 1) mod 3)> in %self : (port, exec_unit)[3]
+    datapath %prev_out to %sw#0 : port, port
+
+    yield %sw#1, %exec : port, exec_unit
+  }
+
+  %port_0, %exec_0 = neighbor affine_map<() -> (0)> in %ring : (port, exec_unit)[3]
+  %port_1, %exec_1 = neighbor affine_map<() -> (1)> in %ring : (port, exec_unit)[3]
+}
+
+// -----
+
+ktdf_arch.device @device {
+  %outer = neighborhood %arg0 : ()[1, 2] {
+    %inner = neighborhood %arg1 : ()[3] {
+      neighbor affine_map<(d0, d1, d2) -> (d2)> in %arg1 : ()[3]
+    }
+    neighbor affine_map<(d0, d1) -> (d0 + d1)> in %inner : ()[3]
+  }
+  neighbor affine_map<() -> (0, 0)> in %outer : ()[1, 2]
+  neighbor affine_map<() -> (0, 0, 0)> in %outer : ()[1, 2]
+  neighbor affine_map<() -> (1, 0, 0)> in %outer, %outer : ()[1, 2]
 }
 
 // -----

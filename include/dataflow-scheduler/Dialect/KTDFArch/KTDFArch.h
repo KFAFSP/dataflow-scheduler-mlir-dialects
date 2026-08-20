@@ -26,6 +26,7 @@
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
+#include <mlir/Interfaces/InferTypeOpInterface.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchAttributes.h"  // IWYU pragma: export

@@ -161,6 +161,46 @@ void printSwitchType(OpAsmPrinter& printer, Operation* /*op*/,
   printer << "[" << types.size() << "]";
 }
 
+auto parseNeighborhoodType(OpAsmParser& parser, Type& type) -> ParseResult {
+  const auto loc = parser.getCurrentLocation();
+
+  SmallVector<Type> results;
+  if (parser.parseCommaSeparatedList(
+          OpAsmParser::Delimiter::Paren, [&]() -> ParseResult {
+            return parseShortType(parser, results.emplace_back());
+          })) {
+    return failure();
+  }
+
+  SmallVector<int64_t> dimensions;
+  if (parser.parseCommaSeparatedList(
+          OpAsmParser::Delimiter::Square, [&]() -> ParseResult {
+            return parser.parseInteger(dimensions.emplace_back());
+          })) {
+    return failure();
+  }
+
+  // FIXME: NeighborhoodType::getChecked does not compile.
+  if (failed(NeighborhoodType::verify(
+          [&]() -> InFlightDiagnostic { return parser.emitError(loc); },
+          results, dimensions))) {
+    return failure();
+  }
+  type = NeighborhoodType::get(parser.getContext(), results, dimensions);
+  return success();
+}
+
+void printNeighborhoodType(OpAsmPrinter& printer, Operation* /*op*/,
+                           NeighborhoodType type) {
+  printer << "(";
+  llvm::interleaveComma(type.getResults(), printer, [&](Type type) {
+    ktdf_arch::printShortType(printer, type);
+  });
+  printer << ")[";
+  llvm::interleaveComma(type.getDimensions(), printer);
+  printer << "]";
+}
+
 }  // namespace
 
 //===----------------------------------------------------------------------===//
@@ -499,19 +539,19 @@ auto DatapathOp::verify() -> LogicalResult {
 // PatternsOp
 //===----------------------------------------------------------------------===//
 
-void PatternsOp::build(OpBuilder& builder, OperationState& result,
+void PatternsOp::build(OpBuilder& builder, OperationState& state,
                        ArrayRef<StringRef> groups,
                        function_ref<void(OpBuilder&, Location)> body_builder) {
-  auto& props = result.getOrAddProperties<Properties>();
+  auto& props = state.getOrAddProperties<Properties>();
   props.groups = builder.getStrArrayAttr(groups);
 
-  auto& body = result.addRegion()->emplaceBlock();
+  auto& body = state.addRegion()->emplaceBlock();
 
   if (body_builder) {
     OpBuilder::InsertionGuard guard(builder);
 
     builder.setInsertionPointToStart(&body);
-    body_builder(builder, result.location);
+    body_builder(builder, state.location);
   }
 }
 
@@ -525,5 +565,224 @@ auto PatternsOp::verifyRegions() -> LogicalResult {
     }
   }
 
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// NeighborhoodOp
+//===----------------------------------------------------------------------===//
+
+auto NeighborhoodOp::parse(OpAsmParser& parser, OperationState& result)
+    -> ParseResult {
+  // attr-dict
+  if (parser.parseOptionalAttrDict(result.attributes)) {
+    return failure();
+  }
+
+  // ssa-id `:` custom<NeighborhoodType>
+  OpAsmParser::Argument arg;
+  if (parser.parseArgument(arg) || parser.parseColon() ||
+      parseNeighborhoodType(parser, arg.type)) {
+    return failure();
+  }
+  result.addTypes(arg.type);
+
+  // region
+  if (parser.parseRegion(*result.addRegion(), {arg})) {
+    return failure();
+  }
+  ensureTerminator(*result.regions[0], parser.getBuilder(), result.location);
+
+  return success();
+}
+
+void NeighborhoodOp::print(OpAsmPrinter& printer) {
+  // attr-dict
+  printer.printOptionalAttrDict((*this)->getAttrs());
+
+  // ssa-id `:` custom<NeighborhoodType>
+  printer << " " << getBody()->getArgument(0) << " : ";
+  printNeighborhoodType(printer, *this, getNeighborhoodType());
+  printer << " ";
+
+  // region
+  printer.printRegion(getBodyRegion(), false);
+}
+
+void NeighborhoodOp::build(
+    OpBuilder& builder, OperationState& state,
+    NeighborhoodType neighborhood_type,
+    function_ref<void(OpBuilder&, Location, Value)> body_builder) {
+  state.addTypes(neighborhood_type);
+
+  auto& body = state.addRegion()->emplaceBlock();
+auto self =   body.addArgument(neighborhood_type, state.location);
+
+  if (body_builder) {
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(&body);
+    body_builder(builder, state.location, self);
+  }
+
+  ensureTerminator(*state.regions.front(), builder, state.location);
+}
+
+auto NeighborhoodOp::verify() -> LogicalResult {
+  // Check that the region argument list matches the result type.
+  if (getBody()->getNumArguments() != 1) {
+    return emitOpError() << "expected 1 block argument, but got "
+                         << getBody()->getNumArguments();
+  }
+  if (getSelfArgument().getType() != getResult().getType()) {
+    return emitOpError() << "argument #0 type (" << getSelfArgument().getType()
+                         << ") does not match result type ("
+                         << getResult().getType() << ")";
+  }
+
+  return success();
+}
+
+auto NeighborhoodOp::verifyRegions() -> LogicalResult {
+  // Check that the YieldOp matches the declared type.
+  const auto result_types = getNeighborhoodType().getResults();
+  auto yield = cast<YieldOp>(getBody()->getTerminator());
+  if (yield->getNumOperands() != result_types.size()) {
+    return yield->emitOpError()
+           << "number of operands (" << yield->getNumOperands()
+           << ") does not match neighborhood type (" << result_types.size()
+           << ")";
+  }
+  for (auto [idx, type] : llvm::enumerate(yield->getOperandTypes())) {
+    if (type != result_types[idx]) {
+      return yield.emitOpError()
+             << "operand #" << idx << " type (" << type << ") "
+             << " does not match neighborhood type (" << result_types[idx]
+             << ")";
+    }
+  }
+
+  return success();
+}
+
+auto NeighborhoodOp::isLeaf() -> bool {
+  return !getBody()
+              ->walk([](NeighborhoodOp) -> WalkResult {
+                return WalkResult::interrupt();
+              })
+              .wasInterrupted();
+}
+
+void NeighborhoodOp::getDomain(SmallVectorImpl<int64_t>& domain) {
+  const auto offset = domain.size();
+  for (auto scope = *this; scope;
+       scope = scope->getParentOfType<NeighborhoodOp>()) {
+    const auto dims = scope.getNeighborhoodType().getDimensions();
+    domain.append(dims.rbegin(), dims.rend());
+  }
+
+  std::reverse(domain.begin() + offset, domain.end());
+}
+
+//===----------------------------------------------------------------------===//
+// NeighborOp
+//===----------------------------------------------------------------------===//
+
+auto NeighborOp::parse(OpAsmParser& parser, OperationState& result)
+    -> ParseResult {
+  auto& props = result.getOrAddProperties<Properties>();
+
+  // affine-map-attr
+  if (parser.parseCustomAttributeWithFallback(props.map)) {
+    return failure();
+  }
+
+  // attr-dict
+  if (parser.parseOptionalAttrDict(result.attributes)) {
+    return failure();
+  }
+
+  // `in` ssa-operand-list `:` neighborhood-type
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  NeighborhoodType type;
+  if (parser.parseKeyword("in") || parser.parseOperandList(operands) ||
+      parser.parseColon() || parseNeighborhoodType(parser, type)) {
+    return failure();
+  }
+  if (parser.resolveOperands(operands, type, result.operands)) {
+    return failure();
+  }
+  result.addTypes(type.getResults());
+
+  return success();
+}
+
+void NeighborOp::print(OpAsmPrinter& printer) {
+  // affine-map-attr
+  printer << " " << getMapAttr();
+
+  // attr-dict
+  printer.printOptionalAttrDict((*this)->getAttrs(), {getMapAttrName()});
+
+  // `in` ssa-operand-list `:` neighborhood-type
+  printer << " in " << getNeighborhood() << " : ";
+  printNeighborhoodType(printer, *this, getNeighborhoodType());
+}
+
+auto NeighborOp::verify() -> LogicalResult {
+  if (getNeighborhood().empty()) {
+    return emitOpError("requires at least one neighborhod operand");
+  }
+
+  const auto neighborhood_type = getNeighborhoodType();
+
+  // Check that the map input dimensions matches the number of surrounding
+  // neighborhood dimensions.
+  SmallVector<int64_t> domain;
+  if (auto parent = (*this)->getParentOfType<NeighborhoodOp>(); parent) {
+    parent.getDomain(domain);
+  }
+  if (getMap().getNumDims() != domain.size()) {
+    return emitOpError() << "number of input dims (" << getMap().getNumDims()
+                         << ") does not match enclosing scope ("
+                         << domain.size() << ")";
+  }
+
+  // Check that the number of output dimensions matches the neighborhood's
+  // dimensions (which may include the variadic operands dimension).
+  const auto neighborhood_dims = neighborhood_type.getDimensions().size();
+  auto result_dims_match = getMap().getNumResults() == neighborhood_dims + 1;
+  if (getNeighborhood().size() == 1) {
+    result_dims_match |= (getMap().getNumResults() == neighborhood_dims);
+  }
+  if (!result_dims_match) {
+    return emitOpError() << "number of result dims ("
+                         << getMap().getNumResults()
+                         << ") does not match neighborhood ("
+                         << neighborhood_type.getDimensions().size() << ")";
+  }
+
+  return success();
+}
+
+auto NeighborOp::inferReturnTypes(
+    MLIRContext* /*context*/, std::optional<Location> /*location*/,
+    ValueRange operands, DictionaryAttr /*attributes*/,
+    OpaqueProperties /*properties*/, RegionRange /*regions*/,
+    SmallVectorImpl<Type>& inferred) -> LogicalResult {
+  if (operands.empty()) {
+    return failure();
+  }
+  const auto neighborhood_type =
+      dyn_cast<NeighborhoodType>(operands.front().getType());
+  if (!neighborhood_type) {
+    return failure();
+  }
+  for (auto value : operands.drop_front(1)) {
+    if (value.getType() != neighborhood_type) {
+      return failure();
+    }
+  }
+
+  inferred.assign(neighborhood_type.getResults());
   return success();
 }

@@ -25,6 +25,12 @@
 
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchAttributes.h"  // IWYU pragma: keep
 
+namespace mlir::ktdf_arch {
+
+struct EndpointType;
+
+}  // namespace mlir::ktdf_arch
+
 /// Auto-generated includes.
 #define GET_TYPEDEF_CLASSES
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchTypes.h.inc"  // IWYU pragma: export
@@ -34,12 +40,41 @@ namespace mlir::ktdf_arch {
 /// Parses a `ktdf_arch` type mnemonic, or falls back to a qualified type.
 ///
 /// Note that builtin type mnemonics can not be parsed with this function.
-auto parseShortType(OpAsmParser& parser, Type& type) -> ParseResult;
+auto parseShortType(AsmParser& parser, Type& type) -> ParseResult;
 
 /// Prints a `ktdf_arch` type mnemonic, or falls back to a qualified type.
 ///
 /// @pre @p type is not a builtin type.
+void printShortType(AsmPrinter& printer, Type type);
+/// @copydoc printShortType(AsmPrinter&, Type)
 void printShortType(OpAsmPrinter& printer, Operation* op, Type type);
+
+//===----------------------------------------------------------------------===//
+// EndpointType
+//===----------------------------------------------------------------------===//
+
+/// Named constraint for the EndpointType in TableGen.
+struct EndpointType : Type {
+  [[nodiscard]] static auto classof(Type type) -> bool {
+    return isa<MemoryType, ExecutionUnitType, PortType>(type);
+  }
+  [[nodiscard]] static auto classof(MemoryType /*type*/) -> bool {
+    return true;
+  }
+  [[nodiscard]] static auto classof(ExecutionUnitType /*type*/) -> bool {
+    return true;
+  }
+  [[nodiscard]] static auto classof(PortType /*type*/) -> bool { return true; }
+
+  using Type::Type;
+
+  /*implicit*/ EndpointType(MemoryType type)
+      : Type(static_cast<ImplType*>(type.getImpl())) {}
+  /*implicit*/ EndpointType(ExecutionUnitType type)
+      : Type(static_cast<ImplType*>(type.getImpl())) {}
+  /*implicit*/ EndpointType(PortType type)
+      : Type(static_cast<ImplType*>(type.getImpl())) {}
+};
 
 }  // namespace mlir::ktdf_arch
 

@@ -34,7 +34,7 @@ using namespace mlir::ktdf_arch;
 auto mlir::ktdf_arch::verifyResource(Operation* op) -> LogicalResult {
   // All resources must be nested under other resources (or devices).
   auto* const parent = op->getParentOp();
-  if (!isa<DeviceOp, Resource>(parent)) {
+  if (!isa<DeviceOp, Resource>(parent) && !parent->hasTrait<IsMeta>()) {
     return op->emitOpError("expects parent op to be '")
            << DeviceOp::getOperationName() << "' or another resource";
   }
@@ -45,7 +45,7 @@ auto mlir::ktdf_arch::verifyResource(Operation* op) -> LogicalResult {
 auto mlir::ktdf_arch::verifyLink(Operation* op) -> LogicalResult {
   // All links must be nested under a resource (or device).
   auto* const parent = op->getParentOp();
-  if (!isa<DeviceOp, Resource>(parent)) {
+  if (!isa<DeviceOp, Resource>(parent) && !parent->hasTrait<IsMeta>()) {
     return op->emitOpError("expects parent op to be '")
            << DeviceOp::getOperationName() << "' or a resource";
   }

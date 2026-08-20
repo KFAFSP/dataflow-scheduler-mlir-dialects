@@ -28,6 +28,7 @@ include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/OpBase.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchTypes.td"
@@ -321,7 +322,7 @@ def KTDFArch_YieldOp : KTDFArch_Op<"yield", [
   Pure, 
   ReturnLike, 
   Terminator, 
-  HasParent<"GroupOp">
+  ParentOneOf<["GroupOp", "NeighborhoodOp"]>
 ]> {
   let summary = "Yields resources from a subgraph.";
   let description = [{
@@ -663,6 +664,154 @@ def KTDFArch_PatternsOp : KTDFArch_Op<"patterns", [
 
   let assemblyFormat = [{
     ($groups^)? attr-dict-with-keyword $region
+  }];
+}
+
+def KTDFArch_NeighborhoodOp : KTDFArch_Op<"neighborhood", [
+  SingleBlock,
+  KTDFArch_IsMeta,
+  KTDFArch_Subgraph,
+  SingleBlockImplicitTerminator<"YieldOp">
+]> {
+  let summary = "Declares a tiled repetition.";
+  let description = [{
+    The `ktdf_arch.neighborhood` operation defines a subgraph that is repeated 
+    for a hyperrectangular index domain.
+
+    Each tile in the domain is an instance of the subgraph defined within the
+    region, which is not isolated from above, and which will be unrolled at
+    the same nesting level of IR. Each tile may yield a number of endpoints,
+    which can be queried using the `ktdf_arch.neighbor` op.
+
+    Example:
+    ```
+    ktdf_arch.device @device {
+      %ring = neighborhood %self : (port, exec_unit)[3] {
+        %exec = group share() {
+          %local = memory {kind = "local"}
+          %exec = exec_unit
+          yield %exec
+        } -> exec_unit
+
+        %sw:3 = switch [3]
+        datapath %sw#2 to %exec : port, exec_unit
+        datapath %exec to %sw#2 : exec_unit, port
+
+        %prev_out, %prev_exec = neighbor affine_map<(d0) -> (d0 - 1 mod 2)> in %self : (port, exec_unit)[3]
+        datapath %prev_out to %sw#0 : port, port
+
+        yield %sw#1, %exec : port, exec_unit
+      }
+
+      %port_0, %exec_0 = neighbor affine_map<() -> (0)> in %ring : (port, exec_unit)[3]
+      %port_1, %exec_1 = neighbor affine_map<() -> (1)> in %ring : (port, exec_unit)[3]
+    }
+    ```
+  }];
+
+  let results = (outs KTDFArch_NeighborhoodType:$result);
+  let regions = (region SizedRegion<1>:$region);
+
+  let hasVerifier = 1;
+  let hasRegionVerifier = 1;
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<(ins 
+        CArg<"NeighborhoodType">:$neighborhood_type,
+        CArg<"function_ref<void(OpBuilder&, Location, Value)>", "nullptr">:$body_builder
+    )>
+  ];
+
+  let hasCustomAssemblyFormat = 1;
+
+  let extraClassDeclaration = [{
+    /// Gets the block argument that carries recursive self references.
+    [[nodiscard]] auto getSelfArgument() -> BlockArgument {
+      return getBody()->getArgument(0);
+    }
+    /// Gets the type of the defined neighborhood.
+    [[nodiscard]] auto getNeighborhoodType() -> NeighborhoodType {
+      return getResult().getType();
+    }
+
+    /// Determines whether there are any recursive self references.
+    [[nodiscard]] auto isRecursive() -> bool {
+      return !getSelfArgument().use_empty();
+    }
+/// Determines whether this is a singleton domain.
+    [[nodiscard]] auto isSingleton() -> bool {
+      return getNeighborhoodType().getDimensions().empty();
+    }
+    /// Determines whether there are no nested neighborhoods below this one.
+    [[nodiscard]] auto isLeaf() -> bool;
+
+    /// Appends the effective domain to @p domain .
+    ///
+    /// The effective domain is the concatenation of all surrounding
+    /// NeighborhoodOp dimensions, including this operation, from outermost
+    /// to innermost.
+    void getDomain(SmallVectorImpl<int64_t>& domain);
+    /// Gets the effective domain.
+    ///
+    /// See getDomain(SmallVectorImpl<int64_t>&).
+    [[nodiscard]] auto getDomain() -> SmallVector<int64_t> {
+      SmallVector<int64_t> result;
+      getDomain(result);
+      return result;
+    }
+  }];
+}
+
+def KTDFArch_NeighborOp : KTDFArch_Op<"neighbor", [
+  KTDFArch_IsMeta,
+  DeclareOpInterfaceMethods<InferTypeOpInterface>,
+  Pure
+]> {
+  let summary = "Indexes into a tiled repetition.";
+  let description = [{
+    The `ktdf_arch.neighbor` operation allows querying the yielded endpoints
+    of a particular tile instance from a (tuple of) `ktdf_arch.neighborhood`s.
+
+    The input dimensions of the indexing map correspond to the concatenation of
+    the domains of the enclosing `ktdf_arch.neighborhood` operations, while the
+    output dimensions correspond to the domain of the targeted neighborhoods.
+    The leading result dimension indexes into the operand tuple, and may be
+    omitted if the size of the tuple is 1.
+
+    The results always correspond to the yielded operands of the targeted 
+    neighborhood's tile instance.
+
+    Example:
+    ```
+    ktdf_arch.device @device {
+      %outer = neighborhood %arg0 : ()[1, 2] {
+        %inner = neighborhood %arg1 : ()[3] {
+          neighbor affine_map<(d0, d1, d2) -> (d2)> in %arg1 : ()[3]
+        }
+        neighbor affine_map<(d0, d1) -> (d0 + d1)> in %inner : ()[3]
+      }
+      neighbor affine_map<() -> (0, 0)> in %outer : ()[1, 2]
+      neighbor affine_map<() -> (0, 0, 0)> in %outer : ()[1, 2]
+      neighbor affine_map<() -> (1, 0, 0)> in %outer, %outer : ()[1, 2]
+    }
+    ```
+  }];
+
+  let arguments = (ins 
+    Variadic<KTDFArch_NeighborhoodType>:$neighborhood,
+    ConfinedAttr<AffineMapAttr, [HasNoSymbols]>:$map);
+  let results = (outs Variadic<KTDFArch_EndpointType>:$results);
+
+  let hasVerifier = 1;
+
+  let hasCustomAssemblyFormat = 1;
+
+  let extraClassDeclaration = [{
+    /// Gets the type of the queried neighborhood.
+    [[nodiscard]] auto getNeighborhoodType() -> NeighborhoodType {
+      return cast<NeighborhoodType>(getNeighborhood().front().getType());
+    }
   }];
 }
 

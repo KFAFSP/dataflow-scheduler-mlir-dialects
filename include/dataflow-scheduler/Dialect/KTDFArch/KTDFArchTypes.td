@@ -44,6 +44,32 @@ def KTDFArch_PortType : KTDFArch_Type<"Port", "port"> {
   let summary = "Type of a switch port resource.";
 }
 
-def KTDFArch_EndpointType : AnyTypeOf<[KTDFArch_MemoryType, KTDFArch_ExecutionUnitType, KTDFArch_PortType]>;
+def KTDFArch_EndpointType : Type<
+    CPred<"::llvm::isa<::mlir::ktdf_arch::EndpointType>($_self)">, 
+    "resource endpoint type",
+    "::mlir::ktdf_arch::EndpointType"> {}
+
+def KTDFArch_NeighborhoodType : KTDFArch_Type<"Neighborhood", "neighborhood"> {
+  let summary = "";
+  let description = [{
+  }];
+  
+  let parameters = (ins 
+    ArrayRefParameter<"Type">:$results,
+    ArrayRefParameter<"int64_t">:$dimensions
+  );
+
+  let genVerifyDecl  = 1;
+
+  let assemblyFormat = [{
+    `<` custom<ShortTypeTuple>($results) `[` $dimensions `]` `>`
+  }];
+
+  let extraClassDeclaration = [{
+    [[nodiscard]] auto cloneWith(
+      std::optional<ArrayRef<Type>> results,
+      std::optional<ArrayRef<int64_t>> dimensions) const -> NeighborhoodType;
+  }];
+}
 
 #endif // DATAFLOW_SCHEDULER_DIALECT_KTDFARCH_KTDFARCHTYPES_TD
