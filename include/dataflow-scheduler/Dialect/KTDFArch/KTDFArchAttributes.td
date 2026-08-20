@@ -64,6 +64,11 @@ def KTDFArch_AdjacencyMatrixAttr : Attr<
   let convertFromStorage = "$_self";
 }
 
+def HasNoSymbols : AttrConstraint<
+  CPred<"::llvm::cast<::mlir::AffineMapAttr>($_self).getValue().getNumSymbols() == 0">, 
+  "without symbols"
+> {}
+
 // Base class for KTDF dialect attributes
 class KTDFArch_Attr<string name, string attrMnemonic, list<Trait> traits = []>
     : AttrDef<KTDFArch_Dialect, name, traits> {
