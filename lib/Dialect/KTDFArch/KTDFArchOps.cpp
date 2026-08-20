@@ -358,6 +358,47 @@ void GroupOp::getSuccessorRegions(RegionBranchPoint point,
 }
 
 //===----------------------------------------------------------------------===//
+// YieldOp
+//===----------------------------------------------------------------------===//
+
+auto YieldOp::parse(OpAsmParser& parser, OperationState& result)
+    -> ParseResult {
+  // $operands
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  if (parser.parseOperandList(operands)) {
+    return failure();
+  }
+
+  // attr-dict
+  if (parser.parseOptionalAttrDict(result.attributes)) {
+    return failure();
+  }
+
+  // (`:` custom<ShortTypeList>)
+  SmallVector<Type> operand_types;
+  if (parser.parseOptionalColon()) {
+    operand_types.resize(operands.size(),
+                         ExecutionUnitType::get(parser.getContext()));
+  } else if (parseShortTypeList(parser, operand_types)) {
+    return failure();
+  }
+
+  return parser.resolveOperands(operands, operand_types, {}, result.operands);
+}
+
+void YieldOp::print(OpAsmPrinter& printer) {
+  printer << " ";
+  printer.printOperands(getOperands());
+  printer.printOptionalAttrDict((*this)->getAttrs());
+
+  if (llvm::any_of(getOperandTypes(),
+                   [](Type type) { return !isa<ExecutionUnitType>(type); })) {
+    printer << " : ";
+    llvm::interleaveComma(getOperandTypes(), printer);
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // MemoryOp
 //===----------------------------------------------------------------------===//
 
