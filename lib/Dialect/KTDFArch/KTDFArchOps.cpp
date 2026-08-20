@@ -334,6 +334,8 @@ void GroupOp::build(
     builder.setInsertionPointToStart(&body);
     body_builder(builder, state.location, body.getArguments());
   }
+
+  ensureTerminator(*state.regions.front(), builder, state.location);
 }
 
 auto GroupOp::getEntrySuccessorOperands(RegionSuccessor successor)
