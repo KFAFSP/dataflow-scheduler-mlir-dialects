@@ -21,12 +21,14 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/LogicalResult.h>
+#include <llvm/Support/TypeName.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
+#include <type_traits>
 
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchAttributes.h"
@@ -42,15 +44,51 @@ auto emitIntrinsicError(Operation* op, const NamedAttribute& intrinsic)
   return op->emitError("'") << intrinsic.getName().strref() << "' intrisic ";
 }
 
-template <class Feature>
-auto verifyExecFeature(Operation* op, const NamedAttribute& attr)
-    -> LogicalResult {
+template <class T, class = void>
+struct has_op_name : std::false_type {};
+template <class T>
+struct has_op_name<T, std::void_t<decltype(T::getOperationName())>>
+    : std::true_type {};
+template <class T>
+inline constexpr auto has_op_name_v = has_op_name<T>::value;
+
+template <class T>
+[[nodiscard]] auto getOpName() -> StringRef {
+  if constexpr (has_op_name_v<T>) {
+    const auto name = T::getOperationName();
+    const auto sep = name.find('.');
+    if (name.substr(0, sep) == KTDFArchDialect::getDialectNamespace()) {
+      return name.substr(sep + 1);
+    }
+
+    return name;
+  } else {
+    const auto name = llvm::getTypeName<T>();
+    const auto sep = name.find_last_of(':');
+    return name.substr(sep != StringRef::npos ? sep + 1 : 0);
+  }
+}
+
+template <class... Nodes>
+auto verifyOn(EmitErrorFn emit_error, Operation* op) -> LogicalResult {
+  if (!isa<Nodes...>(op)) {
+    auto diag = emit_error() << "only valid on ";
+    llvm::interleaveComma(ArrayRef<StringRef>{getOpName<Nodes>()...}, diag);
+    return failure();
+  }
+
+  return success();
+}
+
+template <class Feature, class... Nodes>
+auto verifyFeature(Operation* op, const NamedAttribute& attr) -> LogicalResult {
   const auto emit_error = [&]() -> InFlightDiagnostic {
     return emitIntrinsicError(op, attr);
   };
 
-  if (isa<KTDFArchDialect>(op->getDialect()) && !isa<ExecutionUnitOp>(op)) {
-    return emit_error() << "only valid on execution units";
+  if (isa<KTDFArchDialect>(op->getDialect()) &&
+      failed(verifyOn<Nodes...>(emit_error, op))) {
+    return failure();
   }
 
   const auto value = dyn_cast<Feature>(attr.getValue());
@@ -73,8 +111,8 @@ auto KTDFArchDialect::verifyBandwidthAttr(Operation* op,
     return emitIntrinsicError(op, attr);
   };
 
-  if (!isa<Link>(op)) {
-    return emit_error() << "only valid on links";
+  if (failed(verifyOn<Link>(emit_error, op))) {
+    return failure();
   }
 
   const auto value = dyn_cast<BandwidthAttr>(attr.getValue());
@@ -178,8 +216,8 @@ auto KTDFArchDialect::verifyTransferGranularityAttr(Operation* op,
     return emitIntrinsicError(op, attr);
   };
 
-  if (!isa<Link>(op)) {
-    return emit_error() << "only valid on links";
+  if (failed(verifyOn<Link>(emit_error, op))) {
+    return failure();
   }
 
   const auto value = dyn_cast<TransferGranularityAttr>(attr.getValue());
@@ -377,11 +415,7 @@ auto LoadStoreAttr::test(LoadStoreAttr requirements) const -> bool {
 auto KTDFArchDialect::verifyFeatureComputeAttr(Operation* op,
                                                const NamedAttribute& attr)
     -> LogicalResult {
-  if (isa<KTDFArchDialect>(op->getDialect()) && !isa<ExecutionUnitOp>(op)) {
-    return emitIntrinsicError(op, attr) << "only valid on execution units";
-  }
-
-  return success();
+  return verifyFeature<feature::Compute, ExecutionUnitOp>(op, attr);
 }
 
 auto KTDFArchDialect::testFeatureCompute(Attribute provided,
@@ -396,7 +430,7 @@ auto KTDFArchDialect::testFeatureCompute(Attribute provided,
 auto KTDFArchDialect::verifyFeatureLoadAttr(Operation* op,
                                             const NamedAttribute& attr)
     -> LogicalResult {
-  return verifyExecFeature<feature::Load>(op, attr);
+  return verifyFeature<feature::Load, ExecutionUnitOp>(op, attr);
 }
 
 auto KTDFArchDialect::testFeatureLoad(Attribute provided,
@@ -408,13 +442,57 @@ auto KTDFArchDialect::testFeatureLoad(Attribute provided,
 }
 
 //===----------------------------------------------------------------------===//
+// feature::RegisterFile
+//===----------------------------------------------------------------------===//
+
+auto KTDFArchDialect::verifyFeatureRegisterFileAttr(Operation* op,
+                                                    const NamedAttribute& attr)
+    -> LogicalResult {
+  return verifyFeature<feature::RegisterFile, MemoryOp>(op, attr);
+}
+
+auto feature::RegisterFile::verify(EmitErrorFn emit_error) const
+    -> LogicalResult {
+  if (const auto maybe_word_size = getValue<I64Attr>(kWordSizeAttrName);
+      maybe_word_size) {
+    if (*maybe_word_size <= 0) {
+      return emit_error() << "'" << kWordSizeAttrName << "' must be > 0";
+    }
+  } else if (getAttr(kWordSizeAttrName)) {
+    return emit_error() << "attribute '" << kWordSizeAttrName
+                        << "' requires 64-bit integer";
+  }
+
+  return success();
+}
+
+auto KTDFArchDialect::testFeatureRegisterFile(Attribute provided,
+                                              const Feature& required) -> bool {
+  const auto required_value = cast<feature::RegisterFile>(required.getValue());
+  const auto provided_value = cast<feature::RegisterFile>(provided);
+
+  return provided_value.test(required_value);
+}
+
+auto feature::RegisterFile::test(RegisterFile requirements) const -> bool {
+  if (const auto required_word_size = requirements.getWordSize();
+      required_word_size) {
+    if (getWordSize() != required_word_size) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+//===----------------------------------------------------------------------===//
 // feature::SIMD
 //===----------------------------------------------------------------------===//
 
 auto KTDFArchDialect::verifyFeatureSIMDAttr(Operation* op,
                                             const NamedAttribute& attr)
     -> LogicalResult {
-  return verifyExecFeature<feature::SIMD>(op, attr);
+  return verifyFeature<feature::SIMD, ExecutionUnitOp>(op, attr);
 }
 
 auto feature::SIMD::verify(EmitErrorFn emit_error) const -> LogicalResult {
@@ -481,7 +559,7 @@ auto feature::SIMD::test(feature::SIMD requirements) const -> bool {
 auto KTDFArchDialect::verifyFeatureStoreAttr(Operation* op,
                                              const NamedAttribute& attr)
     -> LogicalResult {
-  return verifyExecFeature<feature::Store>(op, attr);
+  return verifyFeature<feature::Store, ExecutionUnitOp>(op, attr);
 }
 
 auto KTDFArchDialect::testFeatureStore(Attribute provided,
@@ -499,19 +577,7 @@ auto KTDFArchDialect::testFeatureStore(Attribute provided,
 auto KTDFArchDialect::verifyFeatureQueueAttr(Operation* op,
                                              const NamedAttribute& attr)
     -> LogicalResult {
-  const auto emit_error = [&]() -> InFlightDiagnostic {
-    return emitIntrinsicError(op, attr);
-  };
-
-  if (isa<KTDFArchDialect>(op->getDialect()) && !isa<Link>(op)) {
-    return emit_error() << "only valid on links";
-  }
-
-  const auto value = dyn_cast<feature::Queue>(attr.getValue());
-  if (!value) {
-    return emit_error() << "requires unit or dictionary attribute";
-  }
-  return value.verify(emit_error);
+  return verifyFeature<feature::Queue, Link>(op, attr);
 }
 
 auto feature::Queue::verify(EmitErrorFn emit_error) const -> LogicalResult {

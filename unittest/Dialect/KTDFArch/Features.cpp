@@ -109,6 +109,27 @@ TEST_CASE("mlir::ktdf_arch::feature::Load") {
   }
 }
 
+TEST_CASE("mlir::ktdf_arch::feature::RegisterFile") {
+  // Setup an MLIR context.
+  DialectRegistry registry;
+  registry.insert<ktdf_arch::KTDFArchDialect>();
+  MLIRContext context(registry);
+  context.allowUnregisteredDialects();
+  context.loadAllAvailableDialects();
+
+  SUBCASE("word_size") {
+    CHECK(testFeature<feature::RegisterFile>(&context, "{ word_size = 1 }",
+                                             "{ }"));
+    CHECK(testFeature<feature::RegisterFile>(&context, "{ word_size = 2 }",
+                                             "{ word_size = 2 }"));
+
+    CHECK_FALSE(testFeature<feature::RegisterFile>(&context, "{ }",
+                                                   "{ word_size = 1 }"));
+    CHECK_FALSE(testFeature<feature::RegisterFile>(
+        &context, "{ word_size = 2 }", "{ word_size = 1 }"));
+  }
+}
+
 TEST_CASE("mlir::ktdf_arch::feature::SIMD") {
   // Setup an MLIR context.
   DialectRegistry registry;

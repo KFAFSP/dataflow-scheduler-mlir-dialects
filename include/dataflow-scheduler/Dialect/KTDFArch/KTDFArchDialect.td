@@ -70,13 +70,14 @@ def KTDFArch_Dialect : Dialect {
     The `ktdf_arch.feature.*` attribute name prefix is reserved by the 
     `ktdf_arch` dialect for features with pre-defined semantics. These include:
 
-    |      Name | Valid on    | Meaning
-    | --------: | ----------- | ---
-    | `compute` | `exec_unit` | Can implement general-purpose computation.
-    |    `load` | `exec_unit` | Can read from connected memory.
-    |    `simd` | `exec_unit` | Has parallel SIMD lanes.
-    |   `store` | `exec_unit` | Can write to connected memory.
-    |   `queue` | `datapath`  | Can have multiple transactions in-flight.
+    |            Name | Valid on    | Meaning
+    | --------------: | ----------- | ---
+    |       `compute` | `exec_unit` | Can implement general-purpose computation.
+    |          `load` | `exec_unit` | Can read from connected memory.
+    | `register_file` | `memory`    | Is a register file.
+    |          `simd` | `exec_unit` | Has parallel SIMD lanes.
+    |         `store` | `exec_unit` | Can write to connected memory.
+    |         `queue` | `datapath`  | Can have multiple transactions in-flight.
 
     Additional features may be implemented in downstream dialects by 
     implementing the `ktdf_arch::FeatureDialectInterface`, which delegates
@@ -102,6 +103,14 @@ def KTDFArch_Dialect : Dialect {
     | `align_in_words` | `i64 > 0`? | Minimum alignment requirement in words.
 
     An absent `align_in_words` is treated as if it was `1`.
+
+    #### `ktdf_arch.feature.register_file`
+
+    This feature is a record of the following fields:
+
+    |        Name | Type       | Description
+    | ----------: | :--------- | ---
+    | `word_size` | `i64 > 0`? | Size of the registers in bytes.
 
     #### `ktdf_arch.feature.simd`
 
@@ -147,12 +156,13 @@ def KTDFArch_Dialect : Dialect {
     KTDFArch_IntrinsicProperty<"features">,
     KTDFArch_IntrinsicProperty<"maps_to">,
     KTDFArch_IntrinsicProperty<"overlaps">,
-    KTDFArch_IntrinsicProperty<"transfer_granularity">
+    KTDFArch_IntrinsicProperty<"transfer_granularity">,
   ];
 
   defvar intrinsicFeatures = [
     KTDFArch_IntrinsicFeature<"compute">,
     KTDFArch_IntrinsicFeature<"load">,
+    KTDFArch_IntrinsicFeature<"register_file">,
     KTDFArch_IntrinsicFeature<"simd", "SIMD">,
     KTDFArch_IntrinsicFeature<"store">,
     KTDFArch_IntrinsicFeature<"queue">

@@ -13,6 +13,15 @@ ktdf_arch.device @my_device attributes {version = 1} {
       ktdf_arch.feature.simd = { lanes = #ktdf_arch.map<f32 = 4, f16 = 8> } 
     }
   }
+  %lrf = memory {
+    kind = "LRF",
+    ktdf_arch.features = {
+      ktdf_arch.feature.register_file = {word_size = 8}
+    }
+  }
+  datapath %cpu to %lrf : exec_unit, memory
+  datapath %lrf to %cpu : memory, exec_unit
+
   %ls = exec_unit { 
     ktdf_arch.features = {
       ktdf_arch.feature.load = {

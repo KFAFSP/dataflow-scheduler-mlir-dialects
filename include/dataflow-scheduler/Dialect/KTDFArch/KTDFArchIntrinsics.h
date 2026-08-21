@@ -272,7 +272,7 @@ struct LoadStoreAttr : FeatureAttrBase {
   [[nodiscard]] auto getWordSize() const -> WordSizeMapAttr {
     return getAttr<WordSizeMapAttr>(kWordSizeAttrName);
   }
-  /// Gets the data word size for @p memory_space .
+  /// Gets the data word size for @p memory_space in bytes.
   [[nodiscard]] auto getWordSize(Attribute memory_space) const -> size_t {
     if (const auto word_size = getWordSize(); word_size) {
       return static_cast<size_t>(word_size.getValue(memory_space).value_or(1));
@@ -296,6 +296,23 @@ struct Compute : FeatureAttr<&KTDFArchDialect::getFeatureComputeAttrName> {
 struct Load
     : FeatureAttr<&KTDFArchDialect::getFeatureLoadAttrName, LoadStoreAttr> {
   using FeatureAttr::FeatureAttr;
+};
+
+// Indicates that the execution unit can perform load operations.
+struct RegisterFile
+    : FeatureAttr<&KTDFArchDialect::getFeatureRegisterFileAttrName> {
+  static constexpr StringLiteral kWordSizeAttrName = "word_size";
+
+  using FeatureAttr::FeatureAttr;
+
+  auto verify(EmitErrorFn emit_error) const -> LogicalResult;
+
+  [[nodiscard]] auto test(RegisterFile requirements) const -> bool;
+
+  /// Gets the data word size in bytes.
+  [[nodiscard]] auto getWordSize() const -> std::optional<size_t> {
+    return getValue<I64Attr>(kWordSizeAttrName);
+  }
 };
 
 /// Indicates that the execution unit has SIMD lanes.

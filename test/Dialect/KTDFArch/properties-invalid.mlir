@@ -15,7 +15,7 @@ ktdf_arch.device @memory_kind_invalid_space {
 // -----
 
 ktdf_arch.device @bandwidth_not_on_link {
-  // expected-error@+1 {{only valid on links}}
+  // expected-error@+1 {{only valid on Link}}
   exec_unit { ktdf_arch.bandwidth = 1 }
 }
 
@@ -73,7 +73,7 @@ ktdf_arch.device @size_less_than_one {
 // -----
 
 ktdf_arch.device @transfer_granularity_not_on_link {
-  // expected-error@+1 {{only valid on links}}
+  // expected-error@+1 {{only valid on Link}}
   exec_unit { ktdf_arch.transfer_granularity = array<i64: 0> }
 }
 

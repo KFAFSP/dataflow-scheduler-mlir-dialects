@@ -1,14 +1,14 @@
 // RUN: dataflow-scheduler-dialects-opt --split-input-file --verify-diagnostics %s
 
 ktdf_arch.device @compute_not_on_execution_unit {
-  // expected-error@+1 {{only valid on execution units}}
+  // expected-error@+1 {{only valid on exec_unit}}
   memory { kind="A", ktdf_arch.features = { ktdf_arch.feature.compute } }
 }
 
 // -----
 
 ktdf_arch.device @load_not_on_execution_unit {
-  // expected-error@+1 {{only valid on execution units}}
+  // expected-error@+1 {{only valid on exec_unit}}
   memory { kind="A", ktdf_arch.features = { ktdf_arch.feature.load } }
 }
 
@@ -56,8 +56,29 @@ ktdf_arch.device @load_invalid_align {
 
 // -----
 
+ktdf_arch.device @register_file_not_on_memory {
+  // expected-error@+1 {{only valid on memory}}
+  exec_unit { ktdf_arch.features = { ktdf_arch.feature.register_file } }
+}
+
+// -----
+
+ktdf_arch.device @register_file_invalid_word_size_type {
+  // expected-error@+1 {{'word_size' requires 64-bit integer}}
+  memory { kind="A", ktdf_arch.features = { ktdf_arch.feature.register_file = { word_size = 1 : i32 } } }
+}
+
+// -----
+
+ktdf_arch.device @register_file_invalid_word_size {
+  // expected-error@+1 {{'word_size' must be > 0}}
+  memory { kind="A", ktdf_arch.features = { ktdf_arch.feature.register_file = { word_size = -1 } } }
+}
+
+// -----
+
 ktdf_arch.device @simd_not_on_execution_unit {
-  // expected-error@+1 {{only valid on execution units}}
+  // expected-error@+1 {{only valid on exec_unit}}
   memory { kind="A", ktdf_arch.features = { ktdf_arch.feature.simd } }
 }
 
@@ -85,7 +106,7 @@ ktdf_arch.device @simd_invalid_lanes {
 // -----
 
 ktdf_arch.device @queue_not_on_link {
-  // expected-error@+1 {{only valid on links}}
+  // expected-error@+1 {{only valid on Link}}
   exec_unit { ktdf_arch.features = { ktdf_arch.feature.queue = { size = "a" } } }
 }
 
