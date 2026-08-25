@@ -387,8 +387,119 @@ void StageOp::build(OpBuilder& builder, OperationState& state,
 // PrivateOp
 //===----------------------------------------------------------------------===//
 
+void PrivateOp::build(OpBuilder& builder, OperationState& state,
+                      TypeRange results,
+                      function_ref<void(OpBuilder&, Location)> body_builder) {
+  state.addTypes(results);
+  auto& body = state.addRegion()->emplaceBlock();
+
+  if (body_builder) {
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(&body);
+    body_builder(builder, state.location);
+  }
+
+  // ensureTerminator(*state.regions.front(), builder, state.location);
+}
+
 auto PrivateOp::getYieldOp() -> PrivateYieldOp {
   return cast<PrivateYieldOp>(getBody()->getTerminator());
+}
+
+namespace {
+
+/// Erases PrivateOp ops that don't have any results and children.
+struct EraseEmptyPrivate : OpRewritePattern<PrivateOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  auto matchAndRewrite(PrivateOp op, PatternRewriter& rewriter) const
+      -> LogicalResult override {
+    if (op->getNumResults() > 0 ||
+        !op.getBody()->without_terminator().empty()) {
+      return failure();
+    }
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/// Canonicalizes the results of a PrivateOp.
+///
+/// - Results without users are dropped.
+/// - Values yielded multiple times are coalesced into one result.
+/// - External yielded values replace their results.
+struct CanonicalizePrivateResults : OpRewritePattern<PrivateOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  auto matchAndRewrite(PrivateOp op, PatternRewriter& rewriter) const
+      -> LogicalResult override {
+    auto changed = false;
+
+    // Collect all unique yield values.
+    llvm::SmallVector<OpOperand*> yield_operands;
+    for (auto& yield : op.getYieldOp()->getOpOperands()) {
+      if (yield.get().getParentRegion()->isProperAncestor(
+              &op.getBodyRegion())) {
+        // The yielded value is available outside of the PrivateOp, meaning it
+        // can be dropped from the results.
+        rewriter.replaceAllUsesWith(op.getResult(yield.getOperandNumber()),
+                                    yield.get());
+        changed = true;
+        continue;
+      }
+
+      if (op.getResult(yield.getOperandNumber()).use_empty()) {
+        // The result is unused and can be dropped.
+        continue;
+      }
+
+      // Check if this value has appeared in the operands we checked already.
+      if (const auto it = llvm::find_if(yield_operands,
+                                        [&](OpOperand* operand) {
+                                          return operand->get() == yield.get();
+                                        });
+          it != yield_operands.end()) {
+        // Let all users consume the value from the existing result.
+        rewriter.replaceAllUsesWith(op.getResult(yield.getOperandNumber()),
+                                    op.getResult((*it)->getOperandNumber()));
+        changed = true;
+        continue;
+      }
+
+      yield_operands.push_back(&yield);
+    }
+
+    if (!changed || yield_operands.size() == op.getNumResults()) {
+      return success(changed);
+    }
+
+    // Create a new PrivateOp with fewer results that inlines the old body.
+    const auto yield_values = llvm::map_to_vector(
+        yield_operands, [](OpOperand* operand) { return operand->get(); });
+    auto new_op = PrivateOp::create(
+        rewriter, op.getLoc(), TypeRange(yield_values),
+        [&](OpBuilder& builder, Location loc) {
+          builder.getBlock()->getOperations().splice(
+              builder.getBlock()->begin(), op.getBody()->getOperations());
+        });
+
+    // Replace all old result uses and erase the old PrivateOp.
+    for (auto [idx, yield] : llvm::enumerate(yield_operands)) {
+      rewriter.replaceAllUsesWith(op.getResult(yield->getOperandNumber()),
+                                  new_op.getResult(idx));
+    }
+    new_op.getYieldOp()->setOperands(yield_values);
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+}  // namespace
+
+void PrivateOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                            MLIRContext* context) {
+  results.add<EraseEmptyPrivate, CanonicalizePrivateResults>(context);
 }
 
 auto PrivateOp::verifyRegions() -> LogicalResult {
@@ -604,10 +715,9 @@ auto verifyFifoReadWrite(FifoSlotType slot, ShapedType shaped,
 }  // namespace
 
 auto ReadFromFifoOp::verify() -> LogicalResult {
-  return verifyFifoReadWrite(
-      getFifoSlot().getType(),
-      llvm::cast<ShapedType>(getResult().getType()),
-      [&]() { return emitOpError(); });
+  return verifyFifoReadWrite(getFifoSlot().getType(),
+                             llvm::cast<ShapedType>(getResult().getType()),
+                             [&]() { return emitOpError(); });
 }
 
 //===----------------------------------------------------------------------===//
@@ -615,10 +725,9 @@ auto ReadFromFifoOp::verify() -> LogicalResult {
 //===----------------------------------------------------------------------===//
 
 auto WriteToFifoOp::verify() -> LogicalResult {
-  return verifyFifoReadWrite(
-      getFifoSlot().getType(),
-      llvm::cast<ShapedType>(getData().getType()),
-      [&]() { return emitOpError(); });
+  return verifyFifoReadWrite(getFifoSlot().getType(),
+                             llvm::cast<ShapedType>(getData().getType()),
+                             [&]() { return emitOpError(); });
 }
 
 //===----------------------------------------------------------------------===//

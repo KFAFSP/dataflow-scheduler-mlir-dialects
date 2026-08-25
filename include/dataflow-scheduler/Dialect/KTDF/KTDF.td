@@ -834,18 +834,18 @@ def KTDF_PrivateOp : KTDF_Op<"private", [
   }];
 
   let hasRegionVerifier = 1;
+  let hasCanonicalizer = 1;
 
+  let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<(ins CArg<"::mlir::TypeRange", "{}">:$results), [{
-     Region* bodyRegion = $_state.addRegion();
-     bodyRegion->emplaceBlock();
-     $_state.addTypes(results);
-    }]>
+    OpBuilder<(ins 
+      CArg<"TypeRange", "{}">:$results, 
+      CArg<"function_ref<void(OpBuilder&, Location)>", "{}">:$body_builder)>
   ];
 
   let extraClassDeclaration = [{
     /// Get the yield operation terminating this private region.
-    auto getYieldOp() -> PrivateYieldOp;
+    [[nodiscard]] auto getYieldOp() -> PrivateYieldOp;
   }];
 }
 
