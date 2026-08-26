@@ -1,4 +1,7 @@
+add_subdirectory(Transforms)
+
 add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFDialect
+    KTDF.cpp
     KTDFAttributes.cpp
     KTDFDialect.cpp
     KTDFEnums.cpp

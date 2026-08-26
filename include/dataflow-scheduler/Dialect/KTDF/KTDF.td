@@ -477,10 +477,13 @@ def KTDF_PipelineOp : KTDF_Op<"pipeline", [
   let extraClassDeclaration = [{
     using StageRange = llvm::iterator_range<Block::op_iterator<StageOp>>;
 
-    auto getPrivateOp() -> PrivateOp;
+    /// Gets the nested PrivateOp operation, if any.
+    [[nodiscard]] auto getPrivateOp() -> PrivateOp;
 
-    auto getStages() -> StageRange;
-    auto getNumStages() -> unsigned;
+    /// Gets the nested StageOp operations.
+    [[nodiscard]] auto getStages() -> StageRange;
+    /// Gets the number of nested StageOp operations.
+    [[nodiscard]] auto getNumStages() -> unsigned;
   }];
 }
 

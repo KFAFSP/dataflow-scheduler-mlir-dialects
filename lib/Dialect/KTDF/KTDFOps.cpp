@@ -434,64 +434,31 @@ struct CanonicalizePrivateResults : OpRewritePattern<PrivateOp> {
 
   auto matchAndRewrite(PrivateOp op, PatternRewriter& rewriter) const
       -> LogicalResult override {
-    auto changed = false;
-
-    // Collect all unique yield values.
-    llvm::SmallVector<OpOperand*> yield_operands;
-    for (auto& yield : op.getYieldOp()->getOpOperands()) {
-      if (yield.get().getParentRegion()->isProperAncestor(
-              &op.getBodyRegion())) {
-        // The yielded value is available outside of the PrivateOp, meaning it
-        // can be dropped from the results.
-        rewriter.replaceAllUsesWith(op.getResult(yield.getOperandNumber()),
-                                    yield.get());
-        changed = true;
-        continue;
-      }
-
-      if (op.getResult(yield.getOperandNumber()).use_empty()) {
-        // The result is unused and can be dropped.
-        continue;
-      }
-
-      // Check if this value has appeared in the operands we checked already.
-      if (const auto it = llvm::find_if(yield_operands,
-                                        [&](OpOperand* operand) {
-                                          return operand->get() == yield.get();
-                                        });
-          it != yield_operands.end()) {
-        // Let all users consume the value from the existing result.
-        rewriter.replaceAllUsesWith(op.getResult(yield.getOperandNumber()),
-                                    op.getResult((*it)->getOperandNumber()));
-        changed = true;
-        continue;
-      }
-
-      yield_operands.push_back(&yield);
+    if (!match(op)) {
+      return failure();
     }
 
-    if (!changed || yield_operands.size() == op.getNumResults()) {
-      return success(changed);
-    }
-
-    // Create a new PrivateOp with fewer results that inlines the old body.
-    const auto yield_values = llvm::map_to_vector(
-        yield_operands, [](OpOperand* operand) { return operand->get(); });
-    auto new_op = PrivateOp::create(
-        rewriter, op.getLoc(), TypeRange(yield_values),
-        [&](OpBuilder& builder, Location loc) {
-          builder.getBlock()->getOperations().splice(
-              builder.getBlock()->begin(), op.getBody()->getOperations());
-        });
-
-    // Replace all old result uses and erase the old PrivateOp.
-    for (auto [idx, yield] : llvm::enumerate(yield_operands)) {
-      rewriter.replaceAllUsesWith(op.getResult(yield->getOperandNumber()),
-                                  new_op.getResult(idx));
-    }
-    new_op.getYieldOp()->setOperands(yield_values);
-    rewriter.eraseOp(op);
+    PipelinePrivatizer::canonicalize(rewriter, op.getParentOp());
     return success();
+  }
+
+ private:
+  [[nodiscard]] static auto match(PrivateOp op) -> bool {
+    if (llvm::any_of(op.getResults(),
+                     [](Value result) -> bool { return result.use_empty(); })) {
+      return true;
+      }
+
+      auto operands = llvm::to_vector(op.getYieldOp()->getOperands());
+    while (!operands.empty()) {
+      auto operand = operands.pop_back_val();
+      if (operand.getParentRegion()->isAncestor(op->getParentRegion()) ||
+          llvm::is_contained(operands, operand)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 };
 
