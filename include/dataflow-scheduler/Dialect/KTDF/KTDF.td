@@ -426,7 +426,8 @@ def KTDF_TilingDeriveSizeOp : KTDF_Op<"tiling.derive_size", [Pure, SameVariadicO
 
 def KTDF_PipelineOp : KTDF_Op<"pipeline", [
     NoTerminator,
-    SingleBlock
+    SingleBlock,
+    AutomaticAllocationScope
   ]> {
   let summary = "Defines a pipeline containing stages";
   let description = [{
@@ -487,7 +488,8 @@ def KTDF_StageOp : KTDF_Op<"stage", [
     NoTerminator,
     SingleBlock,
     HasParent<"ktdf::PipelineOp">,
-    AttrSizedOperandSegments
+    AttrSizedOperandSegments,
+    AutomaticAllocationScope
   ]> {
   let summary = "Defines a stage within a pipeline";
   let description = [{
