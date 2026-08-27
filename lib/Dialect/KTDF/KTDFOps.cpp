@@ -708,7 +708,8 @@ void ReadFromFifoOp::getEffects(
   if (isa<MemRefType>(getResult().getType())) {
     // The returned memref is a transient buffer that we allocate and populate.
     effects.emplace_back(MemoryEffects::Allocate::get(),
-                         cast<OpResult>(getResult()));
+                         cast<OpResult>(getResult()), 0, true,
+                         SideEffects::AutomaticAllocationScopeResource::get());
     effects.emplace_back(MemoryEffects::Write::get(),
                          cast<OpResult>(getResult()));
   }

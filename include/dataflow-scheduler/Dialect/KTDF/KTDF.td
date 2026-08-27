@@ -878,7 +878,8 @@ def KTDF_ParallelOp : KTDF_Op<"parallel", [
       "getLoopSteps", 
       "getLoopUpperBounds", 
       "getStaticTripCount"]>,
-    RecursiveMemoryEffects
+    RecursiveMemoryEffects,
+    AutomaticAllocationScope
   ]> {
   let summary = "N-dim parallel iteration space distributed across hardware instances";
   let description = [{
