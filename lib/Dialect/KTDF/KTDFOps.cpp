@@ -410,22 +410,6 @@ auto PrivateOp::getYieldOp() -> PrivateYieldOp {
 
 namespace {
 
-/// Erases PrivateOp ops that don't have any results and children.
-struct EraseEmptyPrivate : OpRewritePattern<PrivateOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  auto matchAndRewrite(PrivateOp op, PatternRewriter& rewriter) const
-      -> LogicalResult override {
-    if (op->getNumResults() > 0 ||
-        !op.getBody()->without_terminator().empty()) {
-      return failure();
-    }
-
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
 /// Canonicalizes the results of a PrivateOp.
 ///
 /// - Results without users are dropped.
@@ -468,7 +452,7 @@ struct CanonicalizePrivateResults : OpRewritePattern<PrivateOp> {
 
 void PrivateOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                             MLIRContext* context) {
-  results.add<EraseEmptyPrivate, CanonicalizePrivateResults>(context);
+  results.add<CanonicalizePrivateResults>(context);
 }
 
 auto PrivateOp::verifyRegions() -> LogicalResult {
