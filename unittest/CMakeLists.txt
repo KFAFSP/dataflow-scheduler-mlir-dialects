@@ -45,7 +45,7 @@ endif()
 doctest_discover_tests(dataflow-scheduler-dialects-tests)
 
 add_custom_target(dataflow-scheduler-dialects-ctest
-  COMMAND ${CMAKE_CTEST_COMMAND}
+  COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
   DEPENDS dataflow-scheduler-dialects-tests
 )
 add_dependencies(check-dataflow-scheduler-dialects 

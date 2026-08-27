@@ -199,3 +199,39 @@ TEST_CASE("mlir::ktdf_arch::feature::Queue") {
                                       "{ depth = 64 }"));
   }
 }
+
+TEST_CASE("mlir::ktdf_arch::feature::IndirectAddressBuffer") {
+  // Setup an MLIR context.
+  DialectRegistry registry;
+  registry.insert<ktdf_arch::KTDFArchDialect>();
+  MLIRContext context(registry);
+  context.allowUnregisteredDialects();
+  context.loadAllAvailableDialects();
+
+  SUBCASE("num_entries") {
+    CHECK(testFeature<feature::IndirectAddressBuffer>(
+        &context, "{ num_entries = 128 }", "{  }"));
+    CHECK(testFeature<feature::IndirectAddressBuffer>(
+        &context, "{ num_entries = 128 }", "{ num_entries = 128 }"));
+
+    CHECK_FALSE(testFeature<feature::IndirectAddressBuffer>(
+        &context, "{ }", "{ num_entries = 128 }"));
+    CHECK_FALSE(testFeature<feature::IndirectAddressBuffer>(
+        &context, "{ num_entries = 64 }", "{ num_entries = 128 }"));
+
+    CHECK(testFeature<feature::IndirectAddressBuffer>(
+        &context, "{ num_entries = 128 }", "{ num_entries = 64 }"));
+  }
+
+  SUBCASE("entry_type") {
+    CHECK(testFeature<feature::IndirectAddressBuffer>(
+        &context, "{ entry_type = si64 }", "{  }"));
+    CHECK(testFeature<feature::IndirectAddressBuffer>(
+        &context, "{ entry_type = si64 }", "{ entry_type = si64 }"));
+
+    CHECK_FALSE(testFeature<feature::IndirectAddressBuffer>(
+        &context, "{ }", "{ entry_type = si64 }"));
+    CHECK_FALSE(testFeature<feature::IndirectAddressBuffer>(
+        &context, "{ entry_type = si32 }", "{ entry_type = si64 }"));
+  }
+}

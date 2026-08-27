@@ -292,6 +292,32 @@ struct Compute : FeatureAttr<&KTDFArchDialect::getFeatureComputeAttrName> {
   using FeatureAttr::FeatureAttr;
 };
 
+/// Indicates that the memory node is an indirect address buffer (IAB).
+struct IndirectAddressBuffer
+    : FeatureAttr<&KTDFArchDialect::getFeatureIndirectAddressBufferAttrName> {
+  static constexpr StringLiteral kNumEntriesAttrName = "num_entries";
+  static constexpr StringLiteral kEntryTypeAttrName = "entry_type";
+
+  using FeatureAttr::FeatureAttr;
+
+  auto verify(EmitErrorFn emit_error) const -> LogicalResult;
+
+  [[nodiscard]] auto test(IndirectAddressBuffer requirements) const -> bool;
+
+  /// Gets the number of address entries the buffer can hold.
+  [[nodiscard]] auto getNumEntries() const -> std::optional<int64_t> {
+    return getValue<I64Attr>(kNumEntriesAttrName);
+  }
+
+  /// Gets the MLIR type of each address entry.
+  [[nodiscard]] auto getEntryType() const -> Type {
+    if (const auto attr = getAttr<TypeAttr>(kEntryTypeAttrName); attr) {
+      return attr.getValue();
+    }
+    return {};
+  }
+};
+
 // Indicates that the execution unit can perform load operations.
 struct Load
     : FeatureAttr<&KTDFArchDialect::getFeatureLoadAttrName, LoadStoreAttr> {

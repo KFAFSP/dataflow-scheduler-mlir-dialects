@@ -371,6 +371,74 @@ auto LoadStoreAttr::test(LoadStoreAttr requirements) const -> bool {
 }
 
 //===----------------------------------------------------------------------===//
+// feature::IndirectAddressBuffer
+//===----------------------------------------------------------------------===//
+
+auto KTDFArchDialect::verifyFeatureIndirectAddressBufferAttr(
+    Operation* op, const NamedAttribute& attr) -> LogicalResult {
+  const auto emit_error = [&]() -> InFlightDiagnostic {
+    return emitIntrinsicError(op, attr);
+  };
+
+  if (isa<KTDFArchDialect>(op->getDialect()) && !isa<MemoryOp>(op)) {
+    return emit_error() << "only valid on memory nodes";
+  }
+
+  const auto value = dyn_cast<feature::IndirectAddressBuffer>(attr.getValue());
+  if (!value) {
+    return emit_error() << "requires unit or dictionary attribute";
+  }
+  return value.verify(emit_error);
+}
+
+auto feature::IndirectAddressBuffer::verify(EmitErrorFn emit_error) const
+    -> LogicalResult {
+  if (const auto maybe_entries = getNumEntries(); maybe_entries) {
+    if (*maybe_entries <= 0) {
+      return emit_error() << "'" << kNumEntriesAttrName << "' must be > 0";
+    }
+  } else if (getAttr(kNumEntriesAttrName)) {
+    return emit_error() << "attribute '" << kNumEntriesAttrName
+                        << "' requires 64-bit integer";
+  }
+
+  const auto entry_type_raw = getAttr(kEntryTypeAttrName);
+  if (entry_type_raw && !isa<TypeAttr>(entry_type_raw)) {
+    return emit_error() << "attribute '" << kEntryTypeAttrName
+                        << "' requires type attribute";
+  }
+
+  return success();
+}
+
+auto KTDFArchDialect::testFeatureIndirectAddressBuffer(
+    Attribute provided, const Feature& required) -> bool {
+  const auto required_value =
+      cast<feature::IndirectAddressBuffer>(required.getValue());
+  const auto provided_value = cast<feature::IndirectAddressBuffer>(provided);
+
+  return provided_value.test(required_value);
+}
+
+auto feature::IndirectAddressBuffer::test(
+    IndirectAddressBuffer requirements) const -> bool {
+  if (const auto required = requirements.getNumEntries(); required) {
+    const auto provided = getNumEntries();
+    if (!provided || *provided < *required) {
+      return false;
+    }
+  }
+
+  if (const auto required_type = requirements.getEntryType(); required_type) {
+    if (getEntryType() != required_type) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+//===----------------------------------------------------------------------===//
 // feature::Compute
 //===----------------------------------------------------------------------===//
 

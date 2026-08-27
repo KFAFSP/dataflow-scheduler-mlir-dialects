@@ -91,6 +91,7 @@ The following CMake variables can be configured:
 | `LLVM_EXTERNAL_LIT` <br/>*(optional)* | `STRING` | Path to a `lit` executable, required for testing. |
 | `DataflowSchedulerDialects_ENABLE_PYTHON_BINDINGS` <br/>*(default: `OFF`)* | `BOOL` | Whether to build the Python bindings. |
 | `DataflowSchedulerDialects_BUILD_TOOLS` <br/>*(default: `ON`)* | `BOOL` | Whether to build the tool executables. |
+| `DataflowSchedulerDialects_ENABLE_TESTS` <br/>*(default: `ON`)* | `BOOL` | Whether to build and run the unit tests. |
 | `MLIR_LINK_MLIR_DYLIB` <br/>*(optional)* | `BOOL` | Whether to link against a shared MLIR library. |
 
 ### **Linking against shared LLVM/MLIR**

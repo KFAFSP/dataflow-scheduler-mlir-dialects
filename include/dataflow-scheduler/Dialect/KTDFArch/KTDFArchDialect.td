@@ -70,13 +70,14 @@ def KTDFArch_Dialect : Dialect {
     The `ktdf_arch.feature.*` attribute name prefix is reserved by the 
     `ktdf_arch` dialect for features with pre-defined semantics. These include:
 
-    |      Name | Valid on    | Meaning
-    | --------: | ----------- | ---
-    | `compute` | `exec_unit` | Can implement general-purpose computation.
-    |    `load` | `exec_unit` | Can read from connected memory.
-    |    `simd` | `exec_unit` | Has parallel SIMD lanes.
-    |   `store` | `exec_unit` | Can write to connected memory.
-    |   `queue` | `datapath`  | Can have multiple transactions in-flight.
+    |                    Name | Valid on    | Meaning
+    | ----------------------: | ----------- | ---
+    |               `compute` | `exec_unit` | Can implement general-purpose computation.
+    |                  `load` | `exec_unit` | Can read from connected memory.
+    |                  `simd` | `exec_unit` | Has parallel SIMD lanes.
+    |                 `store` | `exec_unit` | Can write to connected memory.
+    |                 `queue` | `datapath`  | Can have multiple transactions in-flight.
+    | `indirect_address_buffer` | `memory`  | Is an indirect address buffer (IAB).
 
     Additional features may be implemented in downstream dialects by 
     implementing the `ktdf_arch::FeatureDialectInterface`, which delegates
@@ -122,6 +123,16 @@ def KTDFArch_Dialect : Dialect {
     | `ordered` | `unit`?    | Whether transfers remain ordered (FIFO).
     |    `size` | `i64 > 0`? | Maximum combined size of in-flight transfers in bytes.
     |   `depth` | `i64 > 0`? | Maximum number of in-flight transfers.
+
+    #### `ktdf_arch.feature.indirect_address_buffer`
+
+    This feature marks a `memory` node as an indirect address buffer (IAB).
+    It is a record of the following fields:
+
+    |            Name | Type       | Description
+    | --------------: | :--------- | ---
+    | `num_entries`   | `i64 > 0`  | Number of address entries the buffer can hold.
+    | `entry_type`    | `Type`     | MLIR type of each address entry (e.g. `si32`).
   }];
 
   let dependentDialects = [
@@ -152,6 +163,7 @@ def KTDFArch_Dialect : Dialect {
 
   defvar intrinsicFeatures = [
     KTDFArch_IntrinsicFeature<"compute">,
+    KTDFArch_IntrinsicFeature<"indirect_address_buffer">,
     KTDFArch_IntrinsicFeature<"load">,
     KTDFArch_IntrinsicFeature<"simd", "SIMD">,
     KTDFArch_IntrinsicFeature<"store">,

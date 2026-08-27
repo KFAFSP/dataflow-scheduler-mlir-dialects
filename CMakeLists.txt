@@ -56,7 +56,7 @@ endif()
 
 option(DataflowSchedulerDialects_ENABLE_PYTHON_BINDINGS "Build Python bindings" NO)
 option(DataflowSchedulerDialects_BUILD_TOOLS "Build tool executables" ${PROJECT_IS_TOP_LEVEL})
-option(DataflowSchedulerDialects_ENABLE_TESTS "Enable unit tests" NO)
+option(DataflowSchedulerDialects_ENABLE_TESTS "Enable unit tests" ${PROJECT_IS_TOP_LEVEL})
 
 #
 # Umbrella targets

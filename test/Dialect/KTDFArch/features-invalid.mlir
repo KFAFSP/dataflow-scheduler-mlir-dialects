@@ -138,3 +138,31 @@ ktdf_arch.device @queue_depth_zero {
   // expected-error@+1 {{'depth' must be > 0}}
   datapath { ktdf_arch.features = { ktdf_arch.feature.queue = { depth = 0 } } } %a to %b : exec_unit, exec_unit
 }
+
+// -----
+
+ktdf_arch.device @indirect_address_buffer_not_on_memory {
+  // expected-error@+1 {{only valid on memory nodes}}
+  exec_unit { ktdf_arch.features = { ktdf_arch.feature.indirect_address_buffer } }
+}
+
+// -----
+
+ktdf_arch.device @indirect_address_buffer_num_entries_not_int {
+  // expected-error@+1 {{'num_entries' requires 64-bit integer}}
+  memory { kind = "IAB", ktdf_arch.features = { ktdf_arch.feature.indirect_address_buffer = { num_entries = "bad" } } }
+}
+
+// -----
+
+ktdf_arch.device @indirect_address_buffer_num_entries_zero {
+  // expected-error@+1 {{'num_entries' must be > 0}}
+  memory { kind = "IAB", ktdf_arch.features = { ktdf_arch.feature.indirect_address_buffer = { num_entries = 0 } } }
+}
+
+// -----
+
+ktdf_arch.device @indirect_address_buffer_entry_type_not_type {
+  // expected-error@+1 {{'entry_type' requires type attribute}}
+  memory { kind = "IAB", ktdf_arch.features = { ktdf_arch.feature.indirect_address_buffer = { entry_type = 42 } } }
+}

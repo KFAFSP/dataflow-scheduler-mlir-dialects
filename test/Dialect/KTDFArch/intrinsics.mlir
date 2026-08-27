@@ -6,6 +6,14 @@ ktdf_arch.device @my_device attributes {version = 1} {
     size = 17179869184
   }
 
+  %iab = memory {
+    kind = "IAB",
+    ktdf_arch.features = {
+      ktdf_arch.feature.indirect_address_buffer = { num_entries = 16, entry_type = si64 }
+    },
+    size = 128
+  }
+
   %cpu = exec_unit { 
     kind = "CPU",
     ktdf_arch.features = { 
