@@ -19,8 +19,10 @@
 #include "dataflow-scheduler/Dialect/KTDF/Transforms/CodeMotion.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/WalkResult.h>
 
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
 
@@ -31,15 +33,45 @@ using namespace mlir::ktdf;
 // hoistPipelineContents
 //===----------------------------------------------------------------------===//
 
+namespace {
+
+[[nodiscard]]
+auto canHoistAbove(Operation* op, Operation* target) -> bool {
+  if (op->mightHaveTrait<OpTrait::IsTerminator>()) {
+    // Never hoist terminators.
+    return false;
+  }
+
+  assert(target->isAncestor(op));
+  // NOTE: We're ignoring IsolatedFromAbove here and assuming that the SSA
+  //       visibility from op to target is uninterrupted.
+
+  const auto visitor = [&](Operation* child) -> WalkResult {
+    // Check all operands originating from outside the op.
+    for (auto operand : child->getOperands()) {
+      auto* const dominator = operand.getParentRegion()->getParentOp();
+      if (op->isAncestor(dominator)) {
+        continue;
+      }
+      if (target->isAncestor(dominator)) {
+        return mlir::WalkResult::interrupt();
+      }
+    }
+
+    if (child->hasTrait<mlir::OpTrait::IsIsolatedFromAbove>()) {
+      return mlir::WalkResult::skip();
+    }
+    return mlir::WalkResult::advance();
+  };
+
+  return !op->walk<mlir::WalkOrder::PreOrder>(visitor).wasInterrupted();
+}
+
+}  // namespace
+
 auto mlir::ktdf::hoistPipelineContents(
     PipelineOp pipeline, function_ref<PipelineAnchor(Operation*)> get_anchor,
     function_ref<void(Operation*)> move_outside_pipeline) -> size_t {
-  const auto is_defined_outside = [&](Value value) -> bool {
-    return value.getParentRegion()->isProperAncestor(&pipeline.getBodyRegion());
-  };
-  const auto can_move_outside = [&](Operation* op) {
-    return llvm::all_of(op->getOperands(), is_defined_outside);
-  };
   const auto default_move = [&](Operation* op) { op->moveBefore(pipeline); };
   if (!move_outside_pipeline) {
     move_outside_pipeline = default_move;
@@ -74,7 +106,7 @@ auto mlir::ktdf::hoistPipelineContents(
             break;
           case PipelineAnchor::Parent:
             // If possible, move the op outside of the pipeline.
-            if (can_move_outside(&op)) {
+            if (canHoistAbove(&op, pipeline)) {
               move_outside_pipeline(&op);
               ++result;
             }
@@ -92,7 +124,8 @@ auto mlir::ktdf::hoistPipelineContents(
         continue;
       }
 
-      if (!can_move_outside(&op) || get_anchor(&op) != PipelineAnchor::Parent) {
+      if (!canHoistAbove(&op, pipeline) ||
+          get_anchor(&op) != PipelineAnchor::Parent) {
         // Op should stay where it is.
         continue;
       }
