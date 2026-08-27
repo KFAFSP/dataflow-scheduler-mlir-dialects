@@ -55,6 +55,11 @@ namespace mlir::ktdf {
 class PipelinePrivatizer {
  public:
   /// Canonicalizes the PrivateOp of @p op .
+  ///
+  /// - Results without users are dropped.
+  /// - Values yielded multiple times are coalesced into one result.
+  /// - External yielded values replace their results.
+  /// - If the resulting PrivateOp is empty, it is erased.
   static void canonicalize(RewriterBase& rewriter, PipelineOp op) {
     PipelinePrivatizer(rewriter, op, true);
   }
@@ -73,7 +78,7 @@ class PipelinePrivatizer {
   auto operator=(PipelinePrivatizer&&) = delete;
   auto operator=(const PipelinePrivatizer&) = delete;
 
-  /// Determines whether @p blockwill be within the PrivateOp.
+  /// Determines whether @p block will be within the PrivateOp.
   [[nodiscard]] auto isPrivate(Block* block) -> bool;
   /// Determines whether @p op will be within the PrivateOp.
   [[nodiscard]] auto isPrivate(Operation* op) -> bool {
@@ -85,7 +90,7 @@ class PipelinePrivatizer {
   /// Privating fails if the SSA property would be broken by moving @p op :
   /// - If @p op is defined inside the pipeline, it may not be nested within an
   ///   isolated region, and its operand definitions must reach the pipeline.
-  /// - If @p op is defined outisde the pipeline, it must not have any users
+  /// - If @p op is defined outside the pipeline, it must not have any users
   ///   outside the pipeline.
   ///
   /// @return Whether @p op was privated.
@@ -95,6 +100,8 @@ class PipelinePrivatizer {
   RewriterBase& rewriter_;
   PipelineOp pipeline_;
   PrivateOp existing_;
+
+  /// Unlinked accumulator for operations to be privated on destruction.
   Block private_;
 };
 
