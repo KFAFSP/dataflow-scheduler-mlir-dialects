@@ -32,6 +32,15 @@
 
 #include "dataflow-scheduler/Dialect/KTDF/KTDFTypes.h"  // IWYU pragma: keep
 
+namespace mlir::ktdf {
+
+/// Resource used for ktdf FIFO queues.
+struct FifoResource : public mlir::SideEffects::Resource::Base<FifoResource> {
+  [[nodiscard]] auto getName() -> StringRef final { return "KTDFFIFOResource"; }
+};
+
+}  // namespace mlir::ktdf
+
 /// Auto-generated includes.
 #define GET_OP_CLASSES
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h.inc"

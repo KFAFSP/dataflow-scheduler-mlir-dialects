@@ -652,6 +652,28 @@ void DataTransferOp::build(OpBuilder& builder, OperationState& state,
         destination, dest_map, dest_indices, dest_size_values);
 }
 
+void DataTransferOp::getEffects(
+    SmallVectorImpl<MemoryEffects::EffectInstance>& effects) {
+  if (isSourceFifo()) {
+    effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable(),
+                         FifoResource::get());
+
+    // Reading from a FIFO mutates its state, and thus it is also writing. But
+    // since we don't know the other FIFO slots, we have to pessimistcally
+    // clobber everything.
+    effects.emplace_back(MemoryEffects::Write::get(), FifoResource::get());
+  } else {
+    effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+  }
+
+  if (isDestFifo()) {
+    effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable(),
+                         0, false, FifoResource::get());
+  } else {
+    effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // ReadFromFifoOp
 //===----------------------------------------------------------------------===//
@@ -689,6 +711,25 @@ auto ReadFromFifoOp::verify() -> LogicalResult {
                              [&]() { return emitOpError(); });
 }
 
+void ReadFromFifoOp::getEffects(
+    SmallVectorImpl<MemoryEffects::EffectInstance>& effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getFifoSlotMutable(),
+                       FifoResource::get());
+
+  // Reading from a FIFO mutates its state, and thus it is also writing. But
+  // since we don't know the other FIFO slots, we have to pessimistcally
+  // clobber everything.
+  effects.emplace_back(MemoryEffects::Write::get(), FifoResource::get());
+
+  if (isa<MemRefType>(getResult().getType())) {
+    // The returned memref is a transient buffer that we allocate and populate.
+    effects.emplace_back(MemoryEffects::Allocate::get(),
+                         cast<OpResult>(getResult()));
+    effects.emplace_back(MemoryEffects::Write::get(),
+                         cast<OpResult>(getResult()));
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // WriteToFifoOp
 //===----------------------------------------------------------------------===//
@@ -697,6 +738,17 @@ auto WriteToFifoOp::verify() -> LogicalResult {
   return verifyFifoReadWrite(getFifoSlot().getType(),
                              llvm::cast<ShapedType>(getData().getType()),
                              [&]() { return emitOpError(); });
+}
+
+void WriteToFifoOp::getEffects(
+    SmallVectorImpl<MemoryEffects::EffectInstance>& effects) {
+  if (isa<MemRefType>(getData().getType())) {
+    effects.emplace_back(MemoryEffects::Read::get(), &getDataMutable(), 0,
+                         false, SideEffects::DefaultResource::get());
+  }
+
+  effects.emplace_back(MemoryEffects::Write::get(), &getFifoSlotMutable(), 0,
+                       false, FifoResource::get());
 }
 
 //===----------------------------------------------------------------------===//

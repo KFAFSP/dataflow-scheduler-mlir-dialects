@@ -37,6 +37,8 @@ class KTDF_Op<string mnemonic, list<Trait> traits = []> :
     Op<KTDF_Dialect, mnemonic, traits> {
 }
 
+def KTDF_FifoResource : Resource<"::mlir::ktdf::FifoResource">;
+
 //===----------------------------------------------------------------------===//
 // FIFO Operations
 //===----------------------------------------------------------------------===//
@@ -113,7 +115,10 @@ def KTDF_FifoAllocateOp : KTDF_Op<"fifo.allocate"> {
   );
 
   let results = (outs
-    Variadic<KTDF_FifoSlotType>:$slots
+    Arg<
+      Variadic<KTDF_FifoSlotType>, 
+      "repeating slot pattern", 
+      [MemAlloc<KTDF_FifoResource>]>:$slots
   );
 
   let assemblyFormat = [{
@@ -133,7 +138,8 @@ def KTDF_ReadFromFifoOp : KTDF_Op<"read_from_fifo", [
     AllMatchSameOperatorTrait<
       ["fifo_slot", "result"], 
       KTDF_ElementType<"_self">.result, 
-      "element type">
+      "element type">,
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let summary = "Read data from a FIFO slot into a tensor or memref";
   let description = [{
@@ -210,7 +216,8 @@ def KTDF_WriteToFifoOp : KTDF_Op<"write_to_fifo", [
     AllMatchSameOperatorTrait<
       ["data", "fifo_slot"], 
       KTDF_ElementType<"_self">.result, 
-      "element type">
+      "element type">,
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let summary = "Write data from a tensor or memref to a FIFO slot";
   let description = [{
@@ -339,12 +346,10 @@ def KTDF_TilingReserveSizeOp : KTDF_Op<"tiling.reserve_size", [Pure]> {
 
   let builders = [
     OpBuilder<(ins "int64_t":$minValue, "int64_t":$divisibility), [{
-      auto indexType = $_builder.getIndexType();
-      $_state.addAttribute(getMinValueAttrName($_state.name),
-                          $_builder.getIndexAttr(minValue));
-      $_state.addAttribute(getDivisibilityAttrName($_state.name),
-                          $_builder.getIndexAttr(divisibility));
-      $_state.addTypes(indexType);
+      auto& props = $_state.getOrAddProperties<Properties>();
+      props.min_value = $_builder.getIndexAttr(minValue);
+      props.divisibility = $_builder.getIndexAttr(divisibility);
+      $_state.addTypes($_builder.getIndexType());
     }]>
   ];
 
@@ -428,7 +433,8 @@ def KTDF_TilingDeriveSizeOp : KTDF_Op<"tiling.derive_size", [Pure, SameVariadicO
 def KTDF_PipelineOp : KTDF_Op<"pipeline", [
     NoTerminator,
     SingleBlock,
-    AutomaticAllocationScope
+    AutomaticAllocationScope,
+    RecursiveMemoryEffects
   ]> {
   let summary = "Defines a pipeline containing stages";
   let description = [{
@@ -493,7 +499,8 @@ def KTDF_StageOp : KTDF_Op<"stage", [
     SingleBlock,
     HasParent<"ktdf::PipelineOp">,
     AttrSizedOperandSegments,
-    AutomaticAllocationScope
+    AutomaticAllocationScope,
+    RecursiveMemoryEffects
   ]> {
   let summary = "Defines a stage within a pipeline";
   let description = [{
@@ -566,7 +573,8 @@ def KTDF_DataTransferOp : KTDF_Op<"data_transfer", [
       KTDF_ElementType<"_self">.result, 
       "element type">,
     AttrSizedOperandSegments,
-    AffineMapAccessInterface
+    AffineMapAccessInterface,
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let summary = "Transfer data between memory locations and FIFO slots";
   let description = [{
@@ -805,7 +813,8 @@ def KTDF_PrivateYieldOp : KTDF_Op<"private_yield", [
 def KTDF_PrivateOp : KTDF_Op<"private", [
     SingleBlockImplicitTerminator<"ktdf::PrivateYieldOp">,
     HasParent<"ktdf::PipelineOp">,
-    DeclareOpInterfaceMethods<RegionBranchOpInterface>
+    DeclareOpInterfaceMethods<RegionBranchOpInterface>,
+    RecursiveMemoryEffects
   ]> {
   let summary = "Define a private region with yielded results";
   let description = [{
@@ -868,7 +877,8 @@ def KTDF_ParallelOp : KTDF_Op<"parallel", [
       "getLoopLowerBounds", 
       "getLoopSteps", 
       "getLoopUpperBounds", 
-      "getStaticTripCount"]>
+      "getStaticTripCount"]>,
+    RecursiveMemoryEffects
   ]> {
   let summary = "N-dim parallel iteration space distributed across hardware instances";
   let description = [{
