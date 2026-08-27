@@ -19,7 +19,6 @@
 #include "dataflow-scheduler/Dialect/KTDF/Transforms/CodeMotion.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 

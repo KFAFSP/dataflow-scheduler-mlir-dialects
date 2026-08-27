@@ -30,7 +30,6 @@
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/IR/DialectImplementation.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
