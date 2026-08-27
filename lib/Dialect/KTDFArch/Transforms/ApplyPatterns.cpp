@@ -19,7 +19,6 @@
 #include "dataflow-scheduler/Dialect/KTDFArch/Transforms/ApplyPatterns.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/DebugLog.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -185,7 +184,6 @@ auto ktdf_arch::getPatterns(const Device& device, PDLPatternModule& patterns,
     result += clonePatterns(pattern_set, patterns);
   }
 
-  registerNativeFunctions(patterns);
   return result;
 }
 
@@ -214,12 +212,18 @@ auto PatternCache::get(const PatternGroups& enabled_groups)
     os << " of device '" << getDevice().getName() << "'";
   });
 
+  registerNativeFunctions(pdl_patterns);
+
   FrozenRewritePatternSet result;
   if (num_patterns > 0) {
     result = FrozenRewritePatternSet(std::move(pdl_patterns));
   }
 
   return map_[enabled_groups] = result;
+}
+
+void PatternCache::registerNativeFunctions(PDLPatternModule& patterns) {
+  ktdf_arch::registerNativeFunctions(patterns);
 }
 
 //===----------------------------------------------------------------------===//
