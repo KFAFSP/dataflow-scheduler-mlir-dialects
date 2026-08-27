@@ -1,4 +1,7 @@
+add_subdirectory(Transforms)
+
 add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFDialect
+    KTDF.cpp
     KTDFAttributes.cpp
     KTDFDialect.cpp
     KTDFEnums.cpp
@@ -18,6 +21,7 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFDialect
   LINK_MLIR_LIBS
     MLIRArithDialect
     MLIRControlFlowInterfaces
+    MLIRLoopLikeInterface
     MLIRSideEffectInterfaces
     MLIRDestinationStyleOpInterface
     MLIRDialectUtils

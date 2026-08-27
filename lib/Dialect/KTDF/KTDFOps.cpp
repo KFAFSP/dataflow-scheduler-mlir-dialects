@@ -24,12 +24,13 @@
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
 // clang-format on
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/IR/DialectImplementation.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
@@ -387,8 +388,70 @@ void StageOp::build(OpBuilder& builder, OperationState& state,
 // PrivateOp
 //===----------------------------------------------------------------------===//
 
+void PrivateOp::build(OpBuilder& builder, OperationState& state,
+                      TypeRange results,
+                      function_ref<void(OpBuilder&, Location)> body_builder) {
+  state.addTypes(results);
+  auto& body = state.addRegion()->emplaceBlock();
+
+  if (body_builder) {
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(&body);
+    body_builder(builder, state.location);
+  }
+
+  // ensureTerminator(*state.regions.front(), builder, state.location);
+}
+
 auto PrivateOp::getYieldOp() -> PrivateYieldOp {
   return cast<PrivateYieldOp>(getBody()->getTerminator());
+}
+
+namespace {
+
+/// Canonicalizes the results of a PrivateOp.
+///
+/// - Results without users are dropped.
+/// - Values yielded multiple times are coalesced into one result.
+/// - External yielded values replace their results.
+struct CanonicalizePrivateResults : OpRewritePattern<PrivateOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  auto matchAndRewrite(PrivateOp op, PatternRewriter& rewriter) const
+      -> LogicalResult override {
+    if (!match(op)) {
+      return failure();
+    }
+
+    PipelinePrivatizer::canonicalize(rewriter, op.getParentOp());
+    return success();
+  }
+
+ private:
+  [[nodiscard]] static auto match(PrivateOp op) -> bool {
+    if (llvm::any_of(op.getResults(),
+                     [](Value result) -> bool { return result.use_empty(); })) {
+      return true;
+    }
+
+    auto operands = llvm::to_vector(op.getYieldOp()->getOperands());
+    while (!operands.empty()) {
+      auto operand = operands.pop_back_val();
+      if (operand.getParentRegion()->isAncestor(op->getParentRegion()) ||
+          llvm::is_contained(operands, operand)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+};
+
+}  // namespace
+
+void PrivateOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                            MLIRContext* context) {
+  results.add<CanonicalizePrivateResults>(context);
 }
 
 auto PrivateOp::verifyRegions() -> LogicalResult {
@@ -572,6 +635,28 @@ void DataTransferOp::build(OpBuilder& builder, OperationState& state,
         destination, dest_map, dest_indices, dest_size_values);
 }
 
+void DataTransferOp::getEffects(
+    SmallVectorImpl<MemoryEffects::EffectInstance>& effects) {
+  if (isSourceFifo()) {
+    effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable(),
+                         FifoResource::get());
+
+    // Reading from a FIFO mutates its state, and thus it is also writing. But
+    // since we don't know the other FIFO slots, we have to pessimistcally
+    // clobber everything.
+    effects.emplace_back(MemoryEffects::Write::get(), FifoResource::get());
+  } else {
+    effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+  }
+
+  if (isDestFifo()) {
+    effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable(),
+                         0, false, FifoResource::get());
+  } else {
+    effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // ReadFromFifoOp
 //===----------------------------------------------------------------------===//
@@ -604,10 +689,29 @@ auto verifyFifoReadWrite(FifoSlotType slot, ShapedType shaped,
 }  // namespace
 
 auto ReadFromFifoOp::verify() -> LogicalResult {
-  return verifyFifoReadWrite(
-      getFifoSlot().getType(),
-      llvm::cast<ShapedType>(getResult().getType()),
-      [&]() { return emitOpError(); });
+  return verifyFifoReadWrite(getFifoSlot().getType(),
+                             llvm::cast<ShapedType>(getResult().getType()),
+                             [&]() { return emitOpError(); });
+}
+
+void ReadFromFifoOp::getEffects(
+    SmallVectorImpl<MemoryEffects::EffectInstance>& effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getFifoSlotMutable(),
+                       FifoResource::get());
+
+  // Reading from a FIFO mutates its state, and thus it is also writing. But
+  // since we don't know the other FIFO slots, we have to pessimistcally
+  // clobber everything.
+  effects.emplace_back(MemoryEffects::Write::get(), FifoResource::get());
+
+  if (isa<MemRefType>(getResult().getType())) {
+    // The returned memref is a transient buffer that we allocate and populate.
+    effects.emplace_back(MemoryEffects::Allocate::get(),
+                         cast<OpResult>(getResult()), 0, true,
+                         SideEffects::AutomaticAllocationScopeResource::get());
+    effects.emplace_back(MemoryEffects::Write::get(),
+                         cast<OpResult>(getResult()));
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -615,10 +719,20 @@ auto ReadFromFifoOp::verify() -> LogicalResult {
 //===----------------------------------------------------------------------===//
 
 auto WriteToFifoOp::verify() -> LogicalResult {
-  return verifyFifoReadWrite(
-      getFifoSlot().getType(),
-      llvm::cast<ShapedType>(getData().getType()),
-      [&]() { return emitOpError(); });
+  return verifyFifoReadWrite(getFifoSlot().getType(),
+                             llvm::cast<ShapedType>(getData().getType()),
+                             [&]() { return emitOpError(); });
+}
+
+void WriteToFifoOp::getEffects(
+    SmallVectorImpl<MemoryEffects::EffectInstance>& effects) {
+  if (isa<MemRefType>(getData().getType())) {
+    effects.emplace_back(MemoryEffects::Read::get(), &getDataMutable(), 0,
+                         false, SideEffects::DefaultResource::get());
+  }
+
+  effects.emplace_back(MemoryEffects::Write::get(), &getFifoSlotMutable(), 0,
+                       false, FifoResource::get());
 }
 
 //===----------------------------------------------------------------------===//
@@ -796,6 +910,54 @@ auto ParallelOp::verifyRegions() -> LogicalResult {
   }
 
   return success();
+}
+
+auto ParallelOp::getLoopRegions() -> SmallVector<Region*> {
+  return {&getBodyRegion()};
+}
+
+auto ParallelOp::getLoopInductionVars() -> std::optional<SmallVector<Value>> {
+  return llvm::to_vector(ValueRange(getBody()->getArguments()));
+}
+
+auto ParallelOp::getLoopLowerBounds()
+    -> std::optional<SmallVector<OpFoldResult>> {
+  return getAsOpFoldResult(getLowerBounds());
+}
+
+auto ParallelOp::getLoopSteps() -> std::optional<SmallVector<OpFoldResult>> {
+  return getAsOpFoldResult(getSteps());
+}
+
+auto ParallelOp::getLoopUpperBounds()
+    -> std::optional<SmallVector<OpFoldResult>> {
+  return getAsOpFoldResult(getUpperBounds());
+}
+
+namespace {
+
+[[nodiscard]] auto mpMul(const APInt& lhs, const APInt& rhs) -> APInt {
+  const auto width = std::max(1U, lhs.getActiveBits() + rhs.getActiveBits());
+  return lhs.zext(width) * rhs.zext(width);
+}
+
+}  // namespace
+
+auto ParallelOp::getStaticTripCount() -> std::optional<APInt> {
+  APInt result(64U, 1);
+
+  for (auto [lb, ub, step] :
+       llvm::zip_equal(getLowerBounds(), getUpperBounds(), getSteps())) {
+    const auto slice =
+        mlir::constantTripCount(lb, ub, step, false, scf::computeUbMinusLb);
+    if (!slice) {
+      return std::nullopt;
+    }
+
+    result = mpMul(result, *slice);
+  }
+
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
