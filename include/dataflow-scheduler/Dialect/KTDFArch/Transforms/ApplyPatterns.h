@@ -101,9 +101,6 @@ class PatternGroups {
 
 /// Collects the @p patterns matching @p enabled_groups in @p device .
 ///
-/// This function also installs the necessary native constraint and rewrite
-/// handlers into @p patterns via `registerNativeFunctions`.
-///
 /// @return Number of patterns added to @p patterns .
 auto getPatterns(const Device& device, PDLPatternModule& patterns,
                  const PatternGroups& enabled_groups) -> size_t;
@@ -118,6 +115,12 @@ class PatternCache : public DeviceView {
   /// Gets the patterns in @p enabled_groups .
   [[nodiscard]] auto get(const PatternGroups& enabled_groups)
       -> FrozenRewritePatternSet;
+
+  /// Registers native PDL functions provided by this cache in @p patterns .
+  ///
+  /// This base class implementation delegates to the
+  /// ktdf_arch::registerNativeFunctions(PDLPatternModule&) function.
+  virtual void registerNativeFunctions(PDLPatternModule& patterns);
 
  private:
   llvm::sys::SmartMutex<true> mutex_;
