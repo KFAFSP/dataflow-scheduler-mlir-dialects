@@ -24,12 +24,14 @@
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
 // clang-format on
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/DialectImplementation.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
@@ -447,9 +449,9 @@ struct CanonicalizePrivateResults : OpRewritePattern<PrivateOp> {
     if (llvm::any_of(op.getResults(),
                      [](Value result) -> bool { return result.use_empty(); })) {
       return true;
-      }
+    }
 
-      auto operands = llvm::to_vector(op.getYieldOp()->getOperands());
+    auto operands = llvm::to_vector(op.getYieldOp()->getOperands());
     while (!operands.empty()) {
       auto operand = operands.pop_back_val();
       if (operand.getParentRegion()->isAncestor(op->getParentRegion()) ||
@@ -872,6 +874,54 @@ auto ParallelOp::verifyRegions() -> LogicalResult {
   }
 
   return success();
+}
+
+auto ParallelOp::getLoopRegions() -> SmallVector<Region*> {
+  return {&getBodyRegion()};
+}
+
+auto ParallelOp::getLoopInductionVars() -> std::optional<SmallVector<Value>> {
+  return llvm::to_vector(ValueRange(getBody()->getArguments()));
+}
+
+auto ParallelOp::getLoopLowerBounds()
+    -> std::optional<SmallVector<OpFoldResult>> {
+  return getAsOpFoldResult(getLowerBounds());
+}
+
+auto ParallelOp::getLoopSteps() -> std::optional<SmallVector<OpFoldResult>> {
+  return getAsOpFoldResult(getSteps());
+}
+
+auto ParallelOp::getLoopUpperBounds()
+    -> std::optional<SmallVector<OpFoldResult>> {
+  return getAsOpFoldResult(getUpperBounds());
+}
+
+namespace {
+
+[[nodiscard]] auto mpMul(const APInt& lhs, const APInt& rhs) -> APInt {
+  const auto width = std::max(1U, lhs.getActiveBits() + rhs.getActiveBits());
+  return lhs.zext(width) * rhs.zext(width);
+}
+
+}  // namespace
+
+auto ParallelOp::getStaticTripCount() -> std::optional<APInt> {
+  APInt result(64U, 1);
+
+  for (auto [lb, ub, step] :
+       llvm::zip_equal(getLowerBounds(), getUpperBounds(), getSteps())) {
+    const auto slice =
+        mlir::constantTripCount(lb, ub, step, false, scf::computeUbMinusLb);
+    if (!slice) {
+      return std::nullopt;
+    }
+
+    result = mpMul(result, *slice);
+  }
+
+  return result;
 }
 
 //===----------------------------------------------------------------------===//

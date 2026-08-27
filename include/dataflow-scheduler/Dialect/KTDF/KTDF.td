@@ -26,6 +26,7 @@
 include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/DestinationStyleOpInterface.td"
+include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 
@@ -860,7 +861,14 @@ def KTDF_PrivateOp : KTDF_Op<"private", [
 
 def KTDF_ParallelOp : KTDF_Op<"parallel", [
     SingleBlock,
-    SameVariadicOperandSize
+    SameVariadicOperandSize,
+    HasParallelRegion,
+    DeclareOpInterfaceMethods<LoopLikeOpInterface, [
+      "getLoopInductionVars", 
+      "getLoopLowerBounds", 
+      "getLoopSteps", 
+      "getLoopUpperBounds", 
+      "getStaticTripCount"]>
   ]> {
   let summary = "N-dim parallel iteration space distributed across hardware instances";
   let description = [{
