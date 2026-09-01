@@ -26,6 +26,7 @@
 
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/OpBase.td"
+include "mlir/IR/RegionKindInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
@@ -51,7 +52,11 @@ def KTDFArch_IsSubgraph : NativeOpTrait<"IsSubgraph">, StructuralOpTrait {
   }];
 }
 
-def KTDFArch_Subgraph : TraitList<[OpAsmOpInterface, KTDFArch_IsSubgraph]>;
+def KTDFArch_Subgraph : TraitList<[
+  OpAsmOpInterface, 
+  KTDFArch_IsSubgraph,
+  RegionKindInterface,
+  HasOnlyGraphRegion]>;
 
 def KTDFArch_IsMeta : NativeOpTrait<"IsMeta"> {
   let cppNamespace = "::mlir::ktdf_arch";
