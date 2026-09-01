@@ -97,7 +97,7 @@ auto parseAttrDictOrAlias(OpAsmParser& parser, NamedAttrList& attrs)
 
 void printAttrDictOrAlias(OpAsmPrinter& printer, Operation* op,
                           const NamedAttrList& attrs,
-                          ArrayRef<StringRef> elided_names = {}) {
+                          ArrayRef<StringRef> elided_names = {"id"}) {
   DictionaryAttr dict;
   if (elided_names.empty()) {
     if (attrs.empty()) {
