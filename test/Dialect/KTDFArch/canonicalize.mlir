@@ -39,9 +39,9 @@ ktdf_arch.device @resolve_neighbor {
     yield %exec
   }
   // CHECK: %[[EXE0:.+]] = neighbor #[[MAP1]] in %[[ONE]] :
-  %exe0 = neighbor affine_map<() -> (1, 0)> in %one, %two : (exec_unit)[2]
+  %exe0 = neighbor affine_map<() -> (0, 1)> in %one, %two : (exec_unit)[2]
   // CHECK: %[[EXE1:.+]] = neighbor #[[MAP0]] in %[[TWO]] :
-  %exe1 = neighbor affine_map<() -> (0, 1)> in %one, %two : (exec_unit)[2]
+  %exe1 = neighbor affine_map<() -> (1, 0)> in %one, %two : (exec_unit)[2]
   datapath %exe0 to %exe1 : exec_unit, exec_unit
 }
 
