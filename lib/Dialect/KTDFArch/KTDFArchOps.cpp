@@ -799,7 +799,7 @@ auto NeighborOp::verify() -> LogicalResult {
 
 namespace {
 
-/// Folds a constant last dimension into the local neighborhood.
+/// Folds a constant first dimension into the local neighborhood.
 struct ResolveNeighbor : OpRewritePattern<NeighborOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -811,7 +811,7 @@ struct ResolveNeighbor : OpRewritePattern<NeighborOp> {
     }
     auto map = source.getMap();
     auto results = llvm::to_vector(map.getResults());
-    const auto index = dyn_cast<AffineConstantExpr>(results.back());
+    const auto index = dyn_cast<AffineConstantExpr>(results.front());
     if (!index) {
       return rewriter.notifyMatchFailure(source,
                                          "last map result is not constant");
@@ -820,7 +820,7 @@ struct ResolveNeighbor : OpRewritePattern<NeighborOp> {
       return rewriter.notifyMatchFailure(source, "index out of range");
     }
 
-    results.resize(results.size() - 1);
+    results.erase(results.begin());
     map = AffineMap::get(map.getNumDims(), 0, results, rewriter.getContext());
     rewriter.modifyOpInPlace(source, [&]() {
       source.setMap(map);
