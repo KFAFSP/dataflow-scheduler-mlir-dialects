@@ -1,5 +1,6 @@
 add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFArchTransforms
     ApplyPatterns.cpp
+    InstantiateNeighborhoods.cpp
 
   ADDITIONAL_HEADER_DIRS
     ${DataflowScheduler_SOURCE_DIR}/include/dataflow-scheduler/Dialect/KTDFArch/Transforms
