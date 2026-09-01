@@ -46,4 +46,19 @@ def ApplyPatternsPass : Pass<"ktdfarch-apply-patterns", "func::FuncOp"> {
   ];
 }
 
+def InstantiateNeighborhoodsPass : Pass<
+  "ktdfarch-instantiate-neighborhoods", 
+  "ktdf_arch::DeviceOp"
+> {
+  let summary = "Instantiates `ktdf_arch.neighborhood` tiles.";
+  let description = [{
+    Given a `ktdf_arch.device`, instantiates all `ktdf_arch.neighborhood` tiles
+    inside out.
+  }];
+
+  let dependentDialects = [
+    "mlir::ktdf_arch::KTDFArchDialect"
+  ];
+}
+
 #endif // DATAFLOW_SCHEDULER_DIALECT_KTDFARCH_TRANSFORMS_PASSES_TD

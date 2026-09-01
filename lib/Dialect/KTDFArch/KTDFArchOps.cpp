@@ -30,6 +30,7 @@
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/WalkResult.h>
@@ -616,7 +617,7 @@ void NeighborhoodOp::build(
   state.addTypes(neighborhood_type);
 
   auto& body = state.addRegion()->emplaceBlock();
-auto self =   body.addArgument(neighborhood_type, state.location);
+  auto self = body.addArgument(neighborhood_type, state.location);
 
   if (body_builder) {
     OpBuilder::InsertionGuard guard(builder);
@@ -662,6 +663,38 @@ auto NeighborhoodOp::verifyRegions() -> LogicalResult {
   }
 
   return success();
+}
+
+namespace {
+
+/// Inlines the contents of a (non-empty) singleton neighborhood.
+struct InlineSingletonNeighborhood : OpRewritePattern<NeighborhoodOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  auto matchAndRewrite(NeighborhoodOp source, PatternRewriter& rewriter) const
+      -> LogicalResult override {
+    if (!source.isSingleton()) {
+      return rewriter.notifyMatchFailure(source,
+                                         "neighborhood is not a singleton");
+    }
+    if (source.getBody()->without_terminator().empty()) {
+      return rewriter.notifyMatchFailure(source, "neighborhood is empty");
+    }
+
+    auto& body = *source.getBody();
+    auto& new_body = *rewriter.splitBlock(&body, std::prev(body.end()));
+    new_body.addArgument(body.getArgument(0).getType(),
+                         body.getArgument(0).getLoc());
+    rewriter.inlineBlockBefore(&body, source, {source.getResult()});
+    return success();
+  }
+};
+
+}  // namespace
+
+void NeighborhoodOp::getCanonicalizationPatterns(RewritePatternSet& result,
+                                                 MLIRContext* context) {
+  result.add<InlineSingletonNeighborhood>(context);
 }
 
 auto NeighborhoodOp::isLeaf() -> bool {
@@ -762,6 +795,69 @@ auto NeighborOp::verify() -> LogicalResult {
   }
 
   return success();
+}
+
+namespace {
+
+/// Folds a constant last dimension into the local neighborhood.
+struct ResolveNeighbor : OpRewritePattern<NeighborOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  auto matchAndRewrite(NeighborOp source, PatternRewriter& rewriter) const
+      -> LogicalResult override {
+    if (source.getNeighborhood().size() <= 1) {
+      return rewriter.notifyMatchFailure(source,
+                                         "local neighborhood is trivial");
+    }
+    auto map = source.getMap();
+    auto results = llvm::to_vector(map.getResults());
+    const auto index = dyn_cast<AffineConstantExpr>(results.back());
+    if (!index) {
+      return rewriter.notifyMatchFailure(source,
+                                         "last map result is not constant");
+    }
+    if (index.getValue() < 0 || index.getValue() >= source->getNumOperands()) {
+      return rewriter.notifyMatchFailure(source, "index out of range");
+    }
+
+    results.resize(results.size() - 1);
+    map = AffineMap::get(map.getNumDims(), 0, results, rewriter.getContext());
+    rewriter.modifyOpInPlace(source, [&]() {
+      source.setMap(map);
+      source->setOperands({source.getOperand(index.getValue())});
+    });
+    return success();
+  }
+};
+
+/// Replaces a neighbor with its neighborhood's invariant result values.
+struct ReplaceNeighbor : OpRewritePattern<NeighborOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  auto matchAndRewrite(NeighborOp source, PatternRewriter& rewriter) const
+      -> LogicalResult override {
+    if (source.getNeighborhood().size() != 1) {
+      return rewriter.notifyMatchFailure(source,
+                                         "local neighborhood is not trivial");
+    }
+    auto neighborhood =
+        source.getNeighborhood().front().getDefiningOp<NeighborhoodOp>();
+    if (!neighborhood ||
+        !neighborhood.getBody()->without_terminator().empty()) {
+      return rewriter.notifyMatchFailure(source, "neighborhood is not empty");
+    }
+
+    rewriter.replaceOp(source,
+                       neighborhood.getBody()->getTerminator()->getOperands());
+    return success();
+  }
+};
+
+}  // namespace
+
+void NeighborOp::getCanonicalizationPatterns(RewritePatternSet& result,
+                                             MLIRContext* context) {
+  result.add<ResolveNeighbor, ReplaceNeighbor>(context);
 }
 
 auto NeighborOp::inferReturnTypes(

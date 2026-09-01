@@ -676,7 +676,9 @@ def KTDFArch_NeighborhoodOp : KTDFArch_Op<"neighborhood", [
   SingleBlock,
   KTDFArch_IsMeta,
   KTDFArch_Subgraph,
-  SingleBlockImplicitTerminator<"YieldOp">
+  SingleBlockImplicitTerminator<"YieldOp">,
+  RecursiveMemoryEffects,
+  AlwaysSpeculatable
 ]> {
   let summary = "Declares a tiled repetition.";
   let description = [{
@@ -702,7 +704,7 @@ def KTDFArch_NeighborhoodOp : KTDFArch_Op<"neighborhood", [
         datapath %sw#2 to %exec : port, exec_unit
         datapath %exec to %sw#2 : exec_unit, port
 
-        %prev_out, %prev_exec = neighbor affine_map<(d0) -> (d0 - 1 mod 2)> in %self : (port, exec_unit)[3]
+        %prev_out, %prev_exec = neighbor affine_map<(d0) -> (d0 - 1 mod 3)> in %self : (port, exec_unit)[3]
         datapath %prev_out to %sw#0 : port, port
 
         yield %sw#1, %exec : port, exec_unit
@@ -719,6 +721,7 @@ def KTDFArch_NeighborhoodOp : KTDFArch_Op<"neighborhood", [
 
   let hasVerifier = 1;
   let hasRegionVerifier = 1;
+  let hasCanonicalizer = 1;
 
   let skipDefaultBuilders = 1;
   let builders = [
@@ -744,7 +747,7 @@ def KTDFArch_NeighborhoodOp : KTDFArch_Op<"neighborhood", [
     [[nodiscard]] auto isRecursive() -> bool {
       return !getSelfArgument().use_empty();
     }
-/// Determines whether this is a singleton domain.
+    /// Determines whether this is a singleton domain.
     [[nodiscard]] auto isSingleton() -> bool {
       return getNeighborhoodType().getDimensions().empty();
     }
@@ -809,6 +812,7 @@ def KTDFArch_NeighborOp : KTDFArch_Op<"neighbor", [
   let results = (outs Variadic<KTDFArch_EndpointType>:$results);
 
   let hasVerifier = 1;
+  let hasCanonicalizer = 1;
 
   let hasCustomAssemblyFormat = 1;
 
