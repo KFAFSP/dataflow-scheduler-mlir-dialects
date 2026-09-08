@@ -28,6 +28,7 @@
 #include <mlir/Support/WalkResult.h>
 
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchIntrinsics.h"
 
 using namespace mlir;
 using namespace mlir::ktdf_arch;
@@ -46,18 +47,9 @@ namespace {
 
 }  // namespace
 
-ResourceKinds::ResourceKinds(mlir::ktdf_arch::DeviceOp declaration,
-                             mlir::AnalysisManager& analyses)
-    : DeviceView(declaration, analyses) {
-  auto& device =
-      analyses
-          .getAnalysis<mlir::ktdf_arch::Device, mlir::ktdf_arch::DeviceOp>();
-  if (!device) {
-    return;
-  }
-
+ResourceKinds::ResourceKinds(const Device& device) : DeviceView(device) {
   // Visit all Resources in the device, visiting parents before children.
-  device.getDefinition().walk<WalkOrder::PreOrder>(
+  device.getBodyRegion().walk<WalkOrder::PreOrder>(
       [&](Resource resource) -> WalkResult {
         const auto kind = resource.getKind();
         if (!kind) {
@@ -79,6 +71,20 @@ ResourceKinds::ResourceKinds(mlir::ktdf_arch::DeviceOp declaration,
 
         return WalkResult::advance();
       });
+
+  // Find the single `exec_unit` marked with feature::Compute.
+  for (const auto& kind : *this) {
+    if (!isa<ExecutionUnitOp>(kind.getExemplar()) ||
+        !kind.getExemplar().getFeature<feature::Compute>()) {
+      continue;
+    }
+
+    if (default_compute_ != nullptr) {
+      default_compute_ = nullptr;
+      return;
+    }
+    default_compute_ = kind;
+  }
 }
 
 void ResourceKinds::getAncestors(
@@ -110,22 +116,21 @@ void ResourceKinds::getInstances(
 
   const auto ancestors = getAncestors(kind);
 
-  getDevice().getDefinition()->walk<WalkOrder::PreOrder>(
-      [&](Resource resource) {
-        const auto current_kind = resource.getKind();
-        if (!current_kind) {
-          return WalkResult::advance();
-        }
+  getDevice().getBodyRegion().walk<WalkOrder::PreOrder>([&](Resource resource) {
+    const auto current_kind = resource.getKind();
+    if (!current_kind) {
+      return WalkResult::advance();
+    }
 
-        if (current_kind == kind) {
-          result.push_back(resource);
-          // Resource can not appear nested within itself.
-          return WalkResult::skip();
-        }
+    if (current_kind == kind) {
+      result.push_back(resource);
+      // Resource can not appear nested within itself.
+      return WalkResult::skip();
+    }
 
-        // We know all ancestors with kinds, so we can skip all subgraphs that
-        // aren't in that set.
-        return ancestors.contains(current_kind) ? WalkResult::advance()
-                                                : WalkResult::skip();
-      });
+    // We know all ancestors with kinds, so we can skip all subgraphs that
+    // aren't in that set.
+    return ancestors.contains(current_kind) ? WalkResult::advance()
+                                            : WalkResult::skip();
+  });
 }

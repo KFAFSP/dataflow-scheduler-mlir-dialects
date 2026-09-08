@@ -47,6 +47,8 @@ namespace mlir::ktdf_arch {
 class ResourceKinds : public DeviceView {
  public:
   /// Caches information about a kind of resource.
+  ///
+  /// Tests `false` and converts to `nullptr` when not found.
   struct Kind {
     /*implicit*/ Kind() = default;
     explicit Kind(Resource exemplar) : exemplar_(exemplar) {}
@@ -83,8 +85,8 @@ class ResourceKinds : public DeviceView {
     llvm::SmallPtrSet<Attribute, 4> parent_kinds_;
   };
 
-  /// Creates the ResourceKinds for the device declared by @p declaration .
-  explicit ResourceKinds(DeviceOp declaration, AnalysisManager& analyses);
+  /// Creates ResourceKinds for @p device .
+  explicit ResourceKinds(const Device& device);
 
   /// Obtains an exemplar of @p kind , if any exists.
   ///
@@ -94,17 +96,20 @@ class ResourceKinds : public DeviceView {
   /// @retval nullptr       No resource of @p kind or of different type.
   template <class ResourceType = Resource>
   [[nodiscard]] auto getInstance(Attribute kind) const -> ResourceType {
-    if (const auto& entry = map_.lookup(kind); entry) {
-      return mlir::dyn_cast<ResourceType>(entry.getExemplar().getOperation());
+    if (const auto it = map_.find(kind); it != map_.end()) {
+      return mlir::dyn_cast<ResourceType>(
+          it->second.getExemplar().getOperation());
     }
     return nullptr;
   }
   /// Obtains an exemplar of @p kind , if any exists.
-  ///
-  /// @retval Resource  Exemplar for @p kind .
-  /// @retval nullptr   No resource of @p kind or of different type.
-  [[nodiscard]] auto operator[](Attribute kind) const -> Resource {
-    return getInstance(kind);
+  [[nodiscard]] auto operator[](Attribute kind) const -> const Kind& {
+    if (const auto it = map_.find(kind); it != map_.end()) {
+      return it->second;
+    }
+
+    static Kind none;
+    return none;
   }
 
   /// Collects all transitive parent kinds of @p kind .
@@ -149,6 +154,12 @@ class ResourceKinds : public DeviceView {
     return nullptr;
   }
 
+  /// Obtains the single `exec_unit` marked with feature::Compute, if any.
+  [[nodiscard]] auto getDefaultCompute() const -> ExecutionUnitOp {
+    return cast_if_present<ExecutionUnitOp>(
+        (*this)[default_compute_].getExemplar());
+  }
+
   //===--------------------------------------------------------------------===//
   // Container Interface
   //===--------------------------------------------------------------------===//
@@ -181,6 +192,7 @@ class ResourceKinds : public DeviceView {
 
  private:
   map_type map_;
+  Attribute default_compute_;
 };
 
 }  // namespace mlir::ktdf_arch

@@ -44,7 +44,8 @@ TEST_CASE("mlir::ktdf_arch::ResourceKinds") {
   // Setup an AnalysisManager to mock pass execution.
   ModuleAnalysisManager module_analyses(module.get(), nullptr);
   AnalysisManager analysis_manager = module_analyses;
-  auto& analysis = analysis_manager.getChildAnalysis<ResourceKinds>(device);
+  auto& devices = analysis_manager.getAnalysis<DeviceManager>();
+  auto& analysis = devices.getOrCreateView<ResourceKinds>(device);
 
   llvm::DenseSet<Attribute> kinds;
   llvm::SmallVector<Resource> resources;
