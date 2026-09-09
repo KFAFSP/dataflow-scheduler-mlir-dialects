@@ -190,7 +190,7 @@ def KTDF_ReadFromFifoOp : KTDF_Op<"read_from_fifo", [
   );
 
   let results = (outs
-    AnyTypeOf<[AnyRankedTensor, AnyMemRef]>:$result
+    AnyTypeOf<[AnyRankedTensor, AnyMemRef], "", "::mlir::ShapedType">:$result
   );
 
   let assemblyFormat = [{
@@ -248,7 +248,7 @@ def KTDF_WriteToFifoOp : KTDF_Op<"write_to_fifo", [
   }];
 
   let arguments = (ins
-    AnyTypeOf<[AnyRankedTensor, AnyMemRef]>:$data,
+    AnyTypeOf<[AnyRankedTensor, AnyMemRef], "", "::mlir::ShapedType">:$data,
     KTDF_FifoSlotType:$fifo_slot
   );
 

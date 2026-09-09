@@ -13,7 +13,9 @@ include(${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake)
 add_executable(dataflow-scheduler-dialects-tests
   Dialect/KTDFArch/Analysis/DeviceManager.cpp
   Dialect/KTDFArch/Analysis/NodeLinks.cpp
+  Dialect/KTDFArch/Analysis/Query.cpp
   Dialect/KTDFArch/Analysis/ResourceIds.cpp
+  Dialect/KTDFArch/Analysis/ResourceKinds.cpp
   Dialect/KTDFArch/AdjacencyMatrixAttr.cpp
   Dialect/KTDFArch/Features.cpp
   Dialect/KTDFArch/Resource.cpp

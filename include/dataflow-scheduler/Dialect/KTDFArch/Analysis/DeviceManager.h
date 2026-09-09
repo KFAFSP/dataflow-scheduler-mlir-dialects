@@ -207,7 +207,7 @@ class DeviceManager {
   ///
   /// See Device(DeviceOp) for more information on importing.
   ///
-  /// @return Device for @p declaration , which tests `false on import error.
+  /// @return Device for @p declaration , which tests `false` on import error.
   auto getOrImportDevice(DeviceOp declaration) -> const Device&;
 
   /// Gets or creates the @p View for @p declaration .
