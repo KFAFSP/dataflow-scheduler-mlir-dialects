@@ -23,10 +23,11 @@ func.func @canonicalize_private_results() {
   // CHECK: ktdf.pipeline
   ktdf.pipeline {
     // CHECK: %[[P:.+]] = ktdf.private -> (memref<f32>) {
-    %p:4 = ktdf.private -> (index, memref<f32>, memref<f64>, memref<f32>) {
+    %p:5 = ktdf.private -> (index, memref<f32>, memref<f64>, memref<f32>, !ktdf.token) {
       %mem = memref.alloc() : memref<f32>
       %unused = memref.alloc() : memref<f64>
-      ktdf.private_yield %c0, %mem, %unused, %mem : index, memref<f32>, memref<f64>, memref<f32>
+      %tok = ktdf.create_token : !ktdf.token
+      ktdf.private_yield %c0, %mem, %unused, %mem, %tok : index, memref<f32>, memref<f64>, memref<f32>, !ktdf.token
     }
     ktdf.stage depends_in(none) depends_out(none) {
       // CHECK: "unregistered.op"(%[[C0]], %[[P]], %[[P]])

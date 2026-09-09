@@ -18,6 +18,8 @@
 
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
 
+#include <mlir/Interfaces/SideEffectInterfaces.h>
+
 using namespace mlir;
 using namespace mlir::ktdf;
 
@@ -108,6 +110,13 @@ PipelinePrivatizer::~PipelinePrivatizer() {
   };
   rewriter_.replaceUsesWithIf(yield_values, target->getResults(),
                               is_outside_private);
+
+  // Erase all privated ops that are trivially dead.
+  target->walk([&](Operation* op) {
+    if (mlir::isOpTriviallyDead(op)) {
+      rewriter_.eraseOp(op);
+    }
+  });
 }
 
 auto PipelinePrivatizer::isPrivate(Block* block) -> bool {
