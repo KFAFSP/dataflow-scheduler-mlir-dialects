@@ -98,7 +98,11 @@ class ResourceIds : public DeviceView {
   [[nodiscard]] auto end() const -> iterator { return map_.end(); }
 
  private:
+  void updateImpl(Resource resource, StringAttr id);
+  auto assignImpl(Resource resource, StringRef prefix) -> StringAttr;
+
   map_type map_;
+  llvm::sys::SmartMutex<true> mutex_;
 };
 
 }  // namespace mlir::ktdf_arch
