@@ -27,7 +27,9 @@
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/MLIRContext.h>
 
+#include <cassert>
 #include <type_traits>
 
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchAttributes.h"
@@ -147,7 +149,20 @@ struct FeaturesAttr
 /// Indicates the architecture element an operation is mapped to.
 struct MapsToAttr
     : IntrinsicAttr<&KTDFArchDialect::getMapsToAttrName, Attribute> {
+  [[nodiscard]] static auto unmapped(MLIRContext* context) -> MapsToAttr {
+    return cast<MapsToAttr>(UnitAttr::get(context));
+  }
+  [[nodiscard]] static auto kind(Attribute kind) -> MapsToAttr {
+    assert(!(isa<UnitAttr, SymbolRefAttr>(kind)));
+    return cast<MapsToAttr>(kind);
+  }
+  [[nodiscard]] static auto id(StringAttr id) -> MapsToAttr {
+    return cast<MapsToAttr>(FlatSymbolRefAttr::get(id));
+  }
+
   using IntrinsicAttr::IntrinsicAttr;
+
+  [[nodiscard]] auto isUnmapped() const -> bool { return isa<UnitAttr>(*this); }
 };
 
 /// Indicates a set of mutexes that allocation of this resource must obey.

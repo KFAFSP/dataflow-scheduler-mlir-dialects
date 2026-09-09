@@ -1,5 +1,6 @@
 add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFArchAnalysis
     DeviceManager.cpp
+    Mapping.cpp
     NodeEndpoints.cpp
     NodeLinks.cpp
     ResourceIds.cpp
