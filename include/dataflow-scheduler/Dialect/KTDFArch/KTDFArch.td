@@ -430,10 +430,11 @@ def KTDFArch_MemoryOp : KTDFArch_NodeOp<
         "Attribute":$kind, 
         CArg<"std::optional<int64_t>", "std::nullopt">:$size
     ), [{
+      auto& props = $_state.getOrAddProperties<Properties>();
       $_state.types.push_back(MemoryType::get($_builder.getContext()));
-      $_state.addAttribute(getKindAttrName($_state.name), kind);
+      props.kind = kind;
       if (size) {
-        $_state.addAttribute(getSizeAttrName($_state.name), $_builder.getI64IntegerAttr(*size));
+        props.size = $_builder.getI64IntegerAttr(*size);
       }
     }]>
   ];
@@ -488,9 +489,9 @@ def KTDFArch_SwitchOp : KTDFArch_NodeOp<
     Example:
     ```
     ktdf_arch.device @my_device {
-      %sw0:2 = switch [2]
-      %sw1:2 = switch [2] { connectivity = dense<[[0, 1], [1, 0]]> : tensor<2x2xi1> }
-      %sw2:4 = switch [4] { connectivity = sparse<[[0, 2], [0, 3], [1, 2]], true> : tensor<4x4xi1> }
+      %sw0:2 = switch[2]
+      %sw1:2 = switch[2] { connectivity = dense<[[0, 1], [1, 0]]> : tensor<2x2xi1> }
+      %sw2:4 = switch[4] { connectivity = sparse<[[0, 2], [0, 3], [1, 2]], true> : tensor<4x4xi1> }
     }
     ```
   }];
@@ -545,7 +546,7 @@ def KTDFArch_DatapathOp : KTDFArch_LinkOp<"datapath"> {
     ktdf_arch.device @my_device {
       %m = memory { kind = 1 }
       %c = exec_unit
-      %sw:2 = switch [2]
+      %sw:2 = switch[2]
 
       datapath @c_dma %m to %c : memory, exec_unit
       datapath { kind = "fifo" } %c to %sw#0 : exec_unit, port

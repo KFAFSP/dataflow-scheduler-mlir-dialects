@@ -84,9 +84,9 @@ ktdf_arch.device @my_device {
 // -----
 
 ktdf_arch.device @my_device {
-  %sw0:2 = switch [2]
-  %sw1:2 = switch [2] { connectivity = dense<[[0, 1],[1, 0]]> : tensor<2x2xi1> }
-  %sw2:4 = switch [4] { connectivity = sparse<[[0, 2], [0, 3], [1, 2]], true> : tensor<4x4xi1> }
+  %sw0:2 = switch[2]
+  %sw1:2 = switch[2] { connectivity = dense<[[0, 1],[1, 0]]> : tensor<2x2xi1> }
+  %sw2:4 = switch[4] { connectivity = sparse<[[0, 2], [0, 3], [1, 2]], true> : tensor<4x4xi1> }
 }
 
 // -----
@@ -94,7 +94,7 @@ ktdf_arch.device @my_device {
 ktdf_arch.device @my_device {
   %m = memory { kind = 1 }
   %c = exec_unit
-  %sw:2 = switch [2]
+  %sw:2 = switch[2]
 
   datapath @c_dma %m to %c : memory, exec_unit
   datapath { kind = "fifo" } %c to %sw#0 : exec_unit, port
