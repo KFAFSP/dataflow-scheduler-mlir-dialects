@@ -27,6 +27,8 @@
 #include <mlir/IR/Attributes.h>
 #include <mlir/Pass/AnalysisManager.h>
 
+#include <type_traits>
+
 #include "dataflow-scheduler/Dialect/KTDFArch/Analysis/DeviceManager.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"
 
@@ -97,8 +99,12 @@ class ResourceKinds : public DeviceView {
   template <class ResourceType = Resource>
   [[nodiscard]] auto getInstance(Attribute kind) const -> ResourceType {
     if (const auto it = map_.find(kind); it != map_.end()) {
-      return mlir::dyn_cast<ResourceType>(
-          it->second.getExemplar().getOperation());
+      if constexpr (std::is_same_v<ResourceType, Resource>) {
+        return it->second.getExemplar();
+      } else {
+        return mlir::dyn_cast<ResourceType>(
+            it->second.getExemplar().getOperation());
+      }
     }
     return nullptr;
   }
