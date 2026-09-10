@@ -297,7 +297,7 @@ class DeviceManagerRef {
   /// be obtained as a non-owning reference. Otherwise, an ephemeral
   /// DeviceManager will be constructed and returned as if by calling
   /// `create(Operation *)` onf @p root .
-  DeviceManagerRef(Operation* root, AnalysisManager analyses);
+  explicit DeviceManagerRef(Operation* root, AnalysisManager analyses);
 
   /// Binds a non-owning reference to @p manager .
   /*implicit*/ DeviceManagerRef(DeviceManager& manager)
@@ -340,7 +340,7 @@ class DeviceRef {
   /// will be used to obtain a reference to the persistent Device declared by
   /// @p declaration . Otherwise, an ephemeral DeviceManager will be constructed
   /// that will construct an ephemeral Device.
-  DeviceRef(DeviceOp declaration, AnalysisManager analyses);
+  explicit DeviceRef(DeviceOp declaration, AnalysisManager analyses);
 
   DeviceRef() = delete;
   DeviceRef(DeviceRef&&) = delete;
@@ -358,7 +358,7 @@ class DeviceRef {
 
   /// Gets or creates the @p View for this device.
   template <class View>
-  auto getOrCreateView() -> View& {
+  auto getOrCreateView() const -> View& {
     return getDeviceManager().getOrCreateView<View>(device_);
   }
 
@@ -367,7 +367,7 @@ class DeviceRef {
   /*implicit*/ operator const Device&() const { return get(); }
   /*implicit*/ operator const Device*() const { return &get(); }
 
-  auto operator->() const -> const Device* { return &device_; }
+  auto operator->() const -> const Device* { return &get(); }
 
  private:
   DeviceManagerRef manager_;
@@ -386,6 +386,48 @@ class DeviceRef {
 /// @retval DeviceOp  Unambiguous device declaration referenced by @p op .
 /// @retval nullptr   No (unambiguous) device declaration found.
 [[nodiscard]] auto findDeviceDeclarationFor(Operation* op) -> DeviceOp;
+
+/// Implements an MLIR analysis that can be used to obtain a default Device.
+///
+/// This analysis is a thin wrapper around an optional DeviceRef, which
+/// constructs itself from the nearest (see findDeviceDeclarationFor) device
+/// around the operation the analysis is construced on.
+class DefaultDevice {
+ public:
+  /// Initializes a DefaultDevice for @p op .
+  ///
+  /// Uses findDeviceDeclarationFor to determine the device for @p op and then
+  /// obtains a reference to it. If no such device is found, the analysis will
+  /// emit an appropriate error and test `false`.
+  explicit DefaultDevice(Operation* op, AnalysisManager analyses);
+
+  /// Gets the referenced Device, or `nullptr` if none found.
+  [[nodiscard]] auto getOrNull() const -> const Device* {
+    return device_.has_value() ? &device_->get() : nullptr;
+  }
+  /*implicit*/ operator const Device*() const { return getOrNull(); }
+  auto operator->() const -> const Device* { return getOrNull(); }
+  /// Gets a value indicating whether there is a default device.
+  explicit operator bool() const { return device_.has_value(); }
+  /// Gets the referenced Device.
+  ///
+  /// @pre  `static_cast<bool>(*this)`
+  [[nodiscard]] auto operator*() const -> const Device& {
+    assert(device_);
+    return device_->get();
+  }
+
+  /// Gets a reference to the underlying DeviceRef.
+  ///
+  /// @pre  `static_cast<bool>(*this)`
+  [[nodiscard]] auto getRef() const -> const DeviceRef& {
+    assert(device_);
+    return *device_;
+  }
+
+ private:
+  std::optional<DeviceRef> device_;
+};
 
 }  // namespace mlir::ktdf_arch
 

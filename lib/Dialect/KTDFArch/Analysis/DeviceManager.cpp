@@ -314,3 +314,21 @@ auto ktdf_arch::findDeviceDeclarationFor(Operation* op) -> DeviceOp {
   // If we found only one reachable device declaration, it must be that one.
   return only;
 }
+
+//===----------------------------------------------------------------------===//
+// DefaultDevice
+//===----------------------------------------------------------------------===//
+
+DefaultDevice::DefaultDevice(Operation* op, AnalysisManager analyses) {
+  auto decl = findDeviceDeclarationFor(op);
+  if (!decl) {
+    op->emitError("unable to locate target device");
+    return;
+  }
+
+  device_.emplace(decl, analyses);
+  if (!device_->get()) {
+    // The resulting Device is still usable, it is just empty.
+    device_->get().getDefinition()->emitWarning("failed to import device");
+  }
+}
