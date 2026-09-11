@@ -44,19 +44,19 @@ ktdf_arch.device @nested {
 // CHECK-LABEL: ktdf_arch.device @ring
 ktdf_arch.device @ring {
   // CHECK: %[[EXEC0:.+]] = group #ring_element share()
-  // CHECK: %[[SW0:.+]]:3 = switch [3]
+  // CHECK: %[[SW0:.+]]:3 = switch[3]
   // CHECK-DAG: datapath %[[SW0]]#2 to %[[EXEC0]] : port, exec_unit
   // CHECK-DAG: datapath %[[EXEC0]] to %[[SW0]]#2 : exec_unit, port
   // CHECK: datapath %[[SW2:.+]]#1 to %[[SW0]]#0 : port, port
 
   // CHECK: %[[EXEC1:.+]] = group #ring_element share()
-  // CHECK: %[[SW1:.+]]:3 = switch [3]
+  // CHECK: %[[SW1:.+]]:3 = switch[3]
   // CHECK-DAG: datapath %[[SW1]]#2 to %[[EXEC1]] : port, exec_unit
   // CHECK-DAG: datapath %[[EXEC1]] to %[[SW1]]#2 : exec_unit, port
   // CHECK: datapath %[[SW0]]#1 to %[[SW1]]#0 : port, port
 
   // CHECK: %[[EXEC2:.+]] = group #ring_element share()
-  // CHECK: %[[SW2]]:3 = switch [3]
+  // CHECK: %[[SW2]]:3 = switch[3]
   // CHECK-DAG: datapath %[[SW2]]#2 to %[[EXEC2]] : port, exec_unit
   // CHECK-DAG: datapath %[[EXEC2]] to %[[SW2]]#2 : exec_unit, port
   // CHECK: datapath %[[SW1]]#1 to %[[SW2]]#0 : port, port
@@ -68,7 +68,7 @@ ktdf_arch.device @ring {
       yield %exec
     } -> exec_unit
 
-    %sw:3 = switch [3]
+    %sw:3 = switch[3]
     datapath %sw#2 to %exec : port, exec_unit
     datapath %exec to %sw#2 : exec_unit, port
 

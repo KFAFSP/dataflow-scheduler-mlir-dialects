@@ -118,7 +118,7 @@ ktdf_arch.device @device {
       yield %exec
     } -> exec_unit
 
-    %sw:3 = switch [3]
+    %sw:3 = switch[3]
     datapath %sw#2 to %exec : port, exec_unit
     datapath %exec to %sw#2 : exec_unit, port
 
