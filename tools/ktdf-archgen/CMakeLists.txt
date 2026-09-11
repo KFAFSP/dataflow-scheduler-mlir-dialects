@@ -12,8 +12,9 @@ mlir_target_link_libraries(ktdf-archgen PRIVATE
   MLIRIR
   MLIRParser
   MLIRPass
-  MLIRSupport
-  MLIROptLib
   MLIRPDLDialect
+  MLIRSupport
+  MLIRTransforms
+  MLIROptLib
 )
 llvm_update_compile_flags(ktdf-archgen)
