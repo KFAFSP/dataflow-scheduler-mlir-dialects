@@ -2,8 +2,8 @@
 
 // CHECK-LABEL: ktdf_arch.device @singleton
 ktdf_arch.device @singleton {
-  // CHECK-DAG: %[[A:.+]] = exec_unit @a
-  // CHECK-DAG: %[[B:.+]] = exec_unit @b
+  // CHECK-NEXT: %[[A:.+]] = exec_unit @a
+  // CHECK-NEXT: %[[B:.+]] = exec_unit @b
 
   %nb = neighborhood %self : (exec_unit, exec_unit)[] {
     %a = exec_unit @a
@@ -18,8 +18,8 @@ ktdf_arch.device @singleton {
 
 // CHECK-LABEL: ktdf_arch.device @degenerate
 ktdf_arch.device @degenerate {
-  // CHECK-DAG: %[[A:.+]] = exec_unit @a
-  // CHECK-DAG: %[[B:.+]] = exec_unit @b
+  // CHECK-NEXT: %[[A:.+]] = exec_unit @a
+  // CHECK-NEXT: %[[B:.+]] = exec_unit @b
 
   %nb = neighborhood %self : (exec_unit, exec_unit)[1] {
     %a = exec_unit @a
@@ -52,30 +52,42 @@ ktdf_arch.device @nested {
   %a = neighbor affine_map<() -> (0)> in %outer : (exec_unit)[2]
   %b = neighbor affine_map<() -> (1)> in %outer : (exec_unit)[2]
 
-  // CHECK: datapath %[[A:.+]] to %[[B:.+]] : exec_unit, exec_unit
+  // CHECK-NEXT: datapath %[[A:.+]] to %[[B:.+]] : exec_unit, exec_unit
   datapath %a to %b : exec_unit, exec_unit
 }
 
 
 // CHECK-LABEL: ktdf_arch.device @ring
 ktdf_arch.device @ring {
-  // CHECK: %[[EXEC0:.+]] = group #ring_element share()
-  // CHECK: %[[SW0:.+]]:3 = switch[3]
-  // CHECK-DAG: datapath %[[SW0]]#2 to %[[EXEC0]] : port, exec_unit
-  // CHECK-DAG: datapath %[[EXEC0]] to %[[SW0]]#2 : exec_unit, port
-  // CHECK: datapath %[[SW2:.+]]#1 to %[[SW0]]#0 : port, port
+  // CHECK-NEXT: %[[EXEC0:.+]] = group #ring_element share() {
+  // CHECK-NEXT:   memory
+  // CHECK-NEXT:   %[[E1:.+]] = exec_unit @exec_1
+  // CHECK-NEXT:   yield %[[E1]]
+  // CHECK-NEXT: } -> exec_unit
+  // CHECK-NEXT: %[[SW0:.+]]:3 = switch[3]
+  // CHECK-NEXT: datapath %[[SW0]]#2 to %[[EXEC0]] : port, exec_unit
+  // CHECK-NEXT: datapath %[[EXEC0]] to %[[SW0]]#2 : exec_unit, port
+  // CHECK-NEXT: datapath %[[SW2:.+]]#1 to %[[SW0]]#0 : port, port
 
-  // CHECK: %[[EXEC1:.+]] = group #ring_element share()
-  // CHECK: %[[SW1:.+]]:3 = switch[3]
-  // CHECK-DAG: datapath %[[SW1]]#2 to %[[EXEC1]] : port, exec_unit
-  // CHECK-DAG: datapath %[[EXEC1]] to %[[SW1]]#2 : exec_unit, port
-  // CHECK: datapath %[[SW0]]#1 to %[[SW1]]#0 : port, port
+  // CHECK-NEXT: %[[EXEC1:.+]] = group #ring_element share() {
+  // CHECK-NEXT:   memory
+  // CHECK-NEXT:   %[[E2:.+]] = exec_unit @exec_2
+  // CHECK-NEXT:   yield %[[E2]]
+  // CHECK-NEXT: } -> exec_unit
+  // CHECK-NEXT: %[[SW1:.+]]:3 = switch[3]
+  // CHECK-NEXT: datapath %[[SW1]]#2 to %[[EXEC1]] : port, exec_unit
+  // CHECK-NEXT: datapath %[[EXEC1]] to %[[SW1]]#2 : exec_unit, port
+  // CHECK-NEXT: datapath %[[SW0]]#1 to %[[SW1]]#0 : port, port
 
-  // CHECK: %[[EXEC2:.+]] = group #ring_element share()
-  // CHECK: %[[SW2]]:3 = switch[3]
-  // CHECK-DAG: datapath %[[SW2]]#2 to %[[EXEC2]] : port, exec_unit
-  // CHECK-DAG: datapath %[[EXEC2]] to %[[SW2]]#2 : exec_unit, port
-  // CHECK: datapath %[[SW1]]#1 to %[[SW2]]#0 : port, port
+  // CHECK-NEXT: %[[EXEC2:.+]] = group #ring_element share() {
+  // CHECK-NEXT:   memory
+  // CHECK-NEXT:   %[[E3:.+]] = exec_unit @exec_3
+  // CHECK-NEXT:   yield %[[E3]]
+  // CHECK-NEXT: } -> exec_unit
+  // CHECK-NEXT: %[[SW2]]:3 = switch[3]
+  // CHECK-NEXT: datapath %[[SW2]]#2 to %[[EXEC2]] : port, exec_unit
+  // CHECK-NEXT: datapath %[[EXEC2]] to %[[SW2]]#2 : exec_unit, port
+  // CHECK-NEXT: datapath %[[SW1]]#1 to %[[SW2]]#0 : port, port
 
   %ring = neighborhood %self : (port, exec_unit)[3] {
     %exec = group {kind="ring_element"} share() {
@@ -97,6 +109,6 @@ ktdf_arch.device @ring {
   %out_0, %exec_0 = neighbor affine_map<() -> (0)> in %ring : (port, exec_unit)[3]
   %out_2, %exec_2 = neighbor affine_map<() -> (2)> in %ring : (port, exec_unit)[3]
 
-  // CHECK: datapath #skip_one %[[EXEC0]] to %[[EXEC2]]
+  // CHECK-NEXT: datapath #skip_one %[[EXEC0]] to %[[EXEC2]]
   datapath {kind = "skip_one"} %exec_0 to %exec_2 : exec_unit, exec_unit
 }
