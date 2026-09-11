@@ -142,8 +142,7 @@ ktdf_arch.device @device {
     neighbor affine_map<(d0, d1) -> (d0 + d1)> in %inner : ()[3]
   }
   neighbor affine_map<() -> (0, 0)> in %outer : ()[1, 2]
-  neighbor affine_map<() -> (0, 0, 0)> in %outer : ()[1, 2]
-  neighbor affine_map<() -> (1, 0, 0)> in %outer, %outer : ()[1, 2]
+  neighbor affine_map<() -> (1, 0, 0)> in neighborhood(%outer, %outer) : ()[2, 1, 2]
 }
 
 // -----

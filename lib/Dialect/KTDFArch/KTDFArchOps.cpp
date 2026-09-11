@@ -202,6 +202,73 @@ void printNeighborhoodType(OpAsmPrinter& printer, Operation* /*op*/,
   printer << "]";
 }
 
+auto parseLocalNeighborhood(
+    OpAsmParser& parser,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand>& neighborhood,
+    SmallVectorImpl<Type>& neighborhood_types) -> ParseResult {
+  if (parser.parseOptionalKeyword("neighborhood")) {
+    // $neighborhood `:` type($neighborhood)
+    if (parser.parseOperand(neighborhood.emplace_back()) ||
+        parser.parseColon() ||
+        parseNeighborhoodType(parser, neighborhood_types.emplace_back())) {
+      return failure();
+    }
+    return success();
+  }
+
+  // `neighborhood` `(` $neighborhood `)`
+  NeighborhoodType local_type;
+  const auto start_loc = parser.getCurrentLocation();
+  if (parser.parseOperandList(neighborhood, OpAsmParser::Delimiter::Paren) ||
+      parser.parseColon()) {
+    return failure();
+  }
+  if (neighborhood.empty()) {
+    return parser.emitError(start_loc, "expected at least 1 operand");
+  }
+  // `:` neighborhood-type
+  const auto type_loc = parser.getCurrentLocation();
+  if (parseNeighborhoodType(parser, local_type)) {
+    return failure();
+  }
+  if (local_type.getDimensions().empty() ||
+      local_type.getDimensions().front() !=
+          static_cast<int64_t>(neighborhood.size())) {
+    return parser.emitError(type_loc, "requires leading dimension of ")
+           << neighborhood.size();
+  }
+  neighborhood_types.assign(
+      neighborhood.size(),
+      local_type.cloneWith(std::nullopt,
+                           local_type.getDimensions().drop_front()));
+  return success();
+}
+
+void printLocalNeighborhood(OpAsmPrinter& printer, Operation* op,
+                            ValueRange neighborhood,
+                            TypeRange /*neighborhood_types*/) {
+  assert(!neighborhood.empty());
+  const auto type = cast<NeighborhoodType>(neighborhood.front().getType());
+
+  auto neighbor = dyn_cast<NeighborOp>(op);
+  if (neighborhood.size() == 1 && !(neighbor && neighbor.isDegenerate())) {
+    // $neighborhood `:` type($neighborhood)
+    printer << neighborhood.front() << " : ";
+    printNeighborhoodType(printer, op, type);
+    return;
+  }
+
+  // `neighborhood` `(` $neighborhood `)` `:`
+  printer << "neighborhood(" << neighborhood << ") : ";
+
+  // neighborhood-type
+  llvm::SmallVector<int64_t> local_dims;
+  local_dims.reserve(1U + type.getDimensions().size());
+  local_dims.push_back(static_cast<int64_t>(neighborhood.size()));
+  llvm::append_range(local_dims, type.getDimensions());
+  printNeighborhoodType(printer, op, type.cloneWith(std::nullopt, local_dims));
+}
+
 }  // namespace
 
 //===----------------------------------------------------------------------===//
@@ -733,53 +800,29 @@ void NeighborhoodOp::getDomain(SmallVectorImpl<int64_t>& domain) {
 // NeighborOp
 //===----------------------------------------------------------------------===//
 
-auto NeighborOp::parse(OpAsmParser& parser, OperationState& result)
-    -> ParseResult {
-  auto& props = result.getOrAddProperties<Properties>();
-
-  // affine-map-attr
-  if (parser.parseCustomAttributeWithFallback(props.map)) {
-    return failure();
-  }
-
-  // attr-dict
-  if (parser.parseOptionalAttrDict(result.attributes)) {
-    return failure();
-  }
-
-  // `in` ssa-operand-list `:` neighborhood-type
-  SmallVector<OpAsmParser::UnresolvedOperand> operands;
-  NeighborhoodType type;
-  if (parser.parseKeyword("in") || parser.parseOperandList(operands) ||
-      parser.parseColon() || parseNeighborhoodType(parser, type)) {
-    return failure();
-  }
-  if (parser.resolveOperands(operands, type, result.operands)) {
-    return failure();
-  }
-  result.addTypes(type.getResults());
-
-  return success();
+auto NeighborOp::isDegenerate() -> bool {
+  const auto type = cast<NeighborhoodType>(getNeighborhood().front().getType());
+  return getNeighborhood().size() == 1 &&
+         getMap().getNumResults() == 1U + type.getDimensions().size();
 }
 
-void NeighborOp::print(OpAsmPrinter& printer) {
-  // affine-map-attr
-  printer << " " << getMapAttr();
+auto NeighborOp::getNeighborhoodType() -> NeighborhoodType {
+  const auto type = cast<NeighborhoodType>(getNeighborhood().front().getType());
+  if (getNeighborhood().size() == 1) {
+    return type;
+  }
 
-  // attr-dict
-  printer.printOptionalAttrDict((*this)->getAttrs(), {getMapAttrName()});
-
-  // `in` ssa-operand-list `:` neighborhood-type
-  printer << " in " << getNeighborhood() << " : ";
-  printNeighborhoodType(printer, *this, getNeighborhoodType());
+  llvm::SmallVector<int64_t> local_dims;
+  local_dims.reserve(1U + type.getDimensions().size());
+  local_dims.push_back(static_cast<int64_t>(getNeighborhood().size()));
+  llvm::append_range(local_dims, type.getDimensions());
+  return type.cloneWith(std::nullopt, local_dims);
 }
 
 auto NeighborOp::verify() -> LogicalResult {
   if (getNeighborhood().empty()) {
     return emitOpError("requires at least one neighborhod operand");
   }
-
-  const auto neighborhood_type = getNeighborhoodType();
 
   // Check that the map input dimensions matches the number of surrounding
   // neighborhood dimensions.
@@ -794,17 +837,15 @@ auto NeighborOp::verify() -> LogicalResult {
   }
 
   // Check that the number of output dimensions matches the neighborhood's
-  // dimensions (which may include the variadic operands dimension).
-  const auto neighborhood_dims = neighborhood_type.getDimensions().size();
-  auto result_dims_match = getMap().getNumResults() == neighborhood_dims + 1;
-  if (getNeighborhood().size() == 1) {
-    result_dims_match |= (getMap().getNumResults() == neighborhood_dims);
-  }
-  if (!result_dims_match) {
+  // dimensions (which may include the variadic operands dimension). Note that
+  // we can't differentiate `in neighborhood(%x)` from `in %x` and thus have to
+  // accept both forms there (the degenerate case).
+  const auto expected_results = getNeighborhoodType().getDimensions().size();
+  if (getMap().getNumResults() != expected_results && !isDegenerate()) {
     return emitOpError() << "number of result dims ("
                          << getMap().getNumResults()
                          << ") does not match neighborhood ("
-                         << neighborhood_type.getDimensions().size() << ")";
+                         << expected_results << ")";
   }
 
   return success();
