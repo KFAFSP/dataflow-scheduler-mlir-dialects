@@ -1,4 +1,4 @@
-// RUN: dataflow-scheduler-dialects-opt %s | dataflow-scheduler-dialects-opt %s | FileCheck %s
+// RUN: ktdf-archgen %s -o - | FileCheck %s
 
 // CHECK-DAG: #exec = {kind = "exec"}
 // CHECK-DAG: #mem = {kind = "mem"}
