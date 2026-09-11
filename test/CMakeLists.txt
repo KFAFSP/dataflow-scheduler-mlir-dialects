@@ -13,7 +13,9 @@ configure_lit_site_cfg(
 
 set(DataflowSchedulerDialects_TEST_DEPENDS
   dataflow-scheduler-dialects-opt
-  FileCheck
+  ktdf-archgen
+  FileCheck 
+  not
 )
 
 if(DataflowSchedulerDialects_ENABLE_PYTHON_BINDINGS)
