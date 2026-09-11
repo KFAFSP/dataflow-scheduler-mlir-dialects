@@ -867,11 +867,10 @@ struct ResolveNeighbor : OpRewritePattern<NeighborOp> {
     auto results = llvm::to_vector(map.getResults());
     const auto index = dyn_cast<AffineConstantExpr>(results.front());
     if (!index) {
-      return rewriter.notifyMatchFailure(source,
-                                         "last map result is not constant");
+      return rewriter.notifyMatchFailure(source, "selector is not constant");
     }
     if (index.getValue() < 0 || index.getValue() >= source->getNumOperands()) {
-      return rewriter.notifyMatchFailure(source, "index out of range");
+      return rewriter.notifyMatchFailure(source, "selector is out of bounds");
     }
 
     results.erase(results.begin());
@@ -899,6 +898,13 @@ struct ReplaceNeighbor : OpRewritePattern<NeighborOp> {
     if (!neighborhood ||
         !neighborhood.getBody()->without_terminator().empty()) {
       return rewriter.notifyMatchFailure(source, "neighborhood is not empty");
+    }
+    if (source.isDegenerate()) {
+      auto selector =
+          dyn_cast<AffineConstantExpr>(source.getMap().getResult(0));
+      if (!selector || selector.getValue() != 0) {
+        return rewriter.notifyMatchFailure(source, "selector is out of bounds");
+      }
     }
 
     rewriter.replaceOp(source,
