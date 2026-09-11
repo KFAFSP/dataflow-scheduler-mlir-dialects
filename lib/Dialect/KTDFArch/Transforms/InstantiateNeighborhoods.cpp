@@ -18,6 +18,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/IR/AffineExpr.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/IRMapping.h>
@@ -231,9 +232,18 @@ struct InstantiateNeighborhoodsPass
       return;
     }
 
-    getOperation()->walk([&](NeighborhoodOp op) {
-      op->emitError("unable to instantiate neighborhood");
-      signalPassFailure();
+    getOperation()->walk([&](Operation* op) {
+      if (auto neighborhood = dyn_cast<NeighborhoodOp>(op); neighborhood) {
+        neighborhood->emitError("unable to instantiate neighborhood");
+        signalPassFailure();
+        return;
+      }
+
+      if (auto neighbor = dyn_cast<NeighborOp>(op); neighbor) {
+        neighbor.emitError("unable to resolve neighbor");
+        signalPassFailure();
+        return;
+      }
     });
 
     if (!changed) {
