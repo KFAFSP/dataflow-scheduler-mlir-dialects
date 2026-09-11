@@ -689,7 +689,9 @@ def KTDFArch_NeighborhoodOp : KTDFArch_Op<"neighborhood", [
     Each tile in the domain is an instance of the subgraph defined within the
     region, which is not isolated from above, and which will be unrolled at
     the same nesting level of IR. Each tile may yield a number of endpoints,
-    which can be queried using the `ktdf_arch.neighbor` op.
+    which can be queried using the `ktdf_arch.neighbor` op. Regardless of its
+    users, every `ktdf_arch.neighborhood` is unrolled for each point in its
+    domain in lexicographic order.
 
     Example:
     ```
