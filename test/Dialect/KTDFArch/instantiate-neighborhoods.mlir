@@ -16,6 +16,22 @@ ktdf_arch.device @singleton {
   datapath %x to %y : exec_unit, exec_unit
 }
 
+// CHECK-LABEL: ktdf_arch.device @degenerate
+ktdf_arch.device @degenerate {
+  // CHECK-DAG: %[[A:.+]] = exec_unit @a
+  // CHECK-DAG: %[[B:.+]] = exec_unit @b
+
+  %nb = neighborhood %self : (exec_unit, exec_unit)[1] {
+    %a = exec_unit @a
+    %b = exec_unit @b
+    yield %a, %b
+  }
+  %x, %y = neighbor affine_map<() -> (0)> in %nb : (exec_unit, exec_unit)[1]
+
+  // CHECK-NEXT: datapath %[[A]] to %[[B]] : exec_unit, exec_unit
+  datapath %x to %y : exec_unit, exec_unit
+}
+
 // CHECK-LABEL: ktdf_arch.device @nested
 ktdf_arch.device @nested {
   // CHECK-NEXT: %[[A:.+]] = exec_unit @exec_{{.+}}

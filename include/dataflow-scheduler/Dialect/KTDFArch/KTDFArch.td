@@ -777,6 +777,7 @@ def KTDFArch_NeighborhoodOp : KTDFArch_Op<"neighborhood", [
 def KTDFArch_NeighborOp : KTDFArch_Op<"neighbor", [
   KTDFArch_IsMeta,
   DeclareOpInterfaceMethods<InferTypeOpInterface>,
+  SameTypeOperands,
   Pure
 ]> {
   let summary = "Indexes into a tiled repetition.";
@@ -786,12 +787,14 @@ def KTDFArch_NeighborOp : KTDFArch_Op<"neighbor", [
 
     The input dimensions of the indexing map correspond to the concatenation of
     the domains of the enclosing `ktdf_arch.neighborhood` operations, while the
-    output dimensions correspond to the domain of the targeted neighborhoods.
-    The leading result dimension indexes into the operand tuple, and may be
-    omitted if the size of the tuple is 1.
-
-    The results always correspond to the yielded operands of the targeted 
+    output dimensions correspond to the domain of the targeted neighborhood. The 
+    results always correspond to the yielded operands of the targeted 
     neighborhood's tile instance.
+
+    When a neighborhood is unrolled into its instances, it turns from one SSA
+    value into many. For this particular use case, this operation supports an
+    additional syntax, where an additional leading result dimension can select
+    from a local ad-hoc neighborhood.
 
     Example:
     ```
@@ -803,8 +806,7 @@ def KTDFArch_NeighborOp : KTDFArch_Op<"neighbor", [
         neighbor affine_map<(d0, d1) -> (d0 + d1)> in %inner : ()[3]
       }
       neighbor affine_map<() -> (0, 0)> in %outer : ()[1, 2]
-      neighbor affine_map<() -> (0, 0, 0)> in %outer : ()[1, 2]
-      neighbor affine_map<() -> (1, 0, 0)> in %outer, %outer : ()[1, 2]
+      neighbor affine_map<() -> (1, 0, 0)> in neighborhood(%outer, %outer) : ()[2, 1, 2]
     }
     ```
   }];
@@ -817,13 +819,17 @@ def KTDFArch_NeighborOp : KTDFArch_Op<"neighbor", [
   let hasVerifier = 1;
   let hasCanonicalizer = 1;
 
-  let hasCustomAssemblyFormat = 1;
+  let assemblyFormat = [{
+    $map attr-dict 
+    `in` custom<LocalNeighborhood>($neighborhood, type($neighborhood))  
+  }];
 
   let extraClassDeclaration = [{
+    /// Determines whether this neighbor indexes into a 1-tuple.
+    [[nodiscard]] auto isDegenerate() -> bool;
+
     /// Gets the type of the queried neighborhood.
-    [[nodiscard]] auto getNeighborhoodType() -> NeighborhoodType {
-      return cast<NeighborhoodType>(getNeighborhood().front().getType());
-    }
+    [[nodiscard]] auto getNeighborhoodType() -> NeighborhoodType;
   }];
 }
 
