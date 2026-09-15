@@ -794,7 +794,7 @@ def KTDFArch_NeighborOp : KTDFArch_Op<"neighbor", [
     When a neighborhood is unrolled into its instances, it turns from one SSA
     value into many. For this particular use case, this operation supports an
     additional syntax, where an additional leading result dimension can select
-    from a local ad-hoc neighborhood.
+    from a local grouping of neighborhoods.
 
     Example:
     ```
