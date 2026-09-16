@@ -50,9 +50,6 @@ struct InstantiateNeighborhood : OpRewritePattern<NeighborhoodOp> {
 
   auto matchAndRewrite(NeighborhoodOp source, PatternRewriter& rewriter) const
       -> LogicalResult override {
-    if (!source.isLeaf()) {
-      return rewriter.notifyMatchFailure(source, "neighborhood is not a leaf");
-    }
     if (source.isSingleton()) {
       return rewriter.notifyMatchFailure(source, "neighborhood is a singleton");
     }
@@ -81,26 +78,31 @@ struct InstantiateNeighborhood : OpRewritePattern<NeighborhoodOp> {
 
  private:
   static void inlinePoint(RewriterBase& rewriter, NeighborOp target,
-                          ArrayRef<int64_t> point) {
+                          ArrayRef<int64_t> point, unsigned dim_offset) {
     auto map = target.getMap();
     assert(map.getNumDims() >= point.size());
 
-    // Substitute in the point for the trailing dims, removing them.
+    // Substitute in the point for the domain dims, removing them.
     SmallVector<AffineExpr> substitutions;
     substitutions.reserve(map.getNumDims());
-    for (auto i = 0U; i < map.getNumDims() - point.size(); ++i) {
+    for (auto i = 0U; i < dim_offset; ++i) {
       substitutions.push_back(getAffineDimExpr(i, target.getContext()));
     }
     for (auto i : point) {
       substitutions.push_back(getAffineConstantExpr(i, target.getContext()));
+    }
+    for (auto i = dim_offset + point.size(); i < map.getNumDims(); ++i) {
+      substitutions.push_back(
+          getAffineDimExpr(i - point.size(), target->getContext()));
     }
     map = map.replaceDimsAndSymbols(substitutions, {},
                                     map.getNumDims() - point.size(), 0);
     rewriter.modifyOpInPlace(target, [&]() { target.setMap(map); });
   }
   static void inlinePoint(RewriterBase& rewriter, Block& target,
-                          ArrayRef<int64_t> point) {
-    target.walk([&](NeighborOp op) { inlinePoint(rewriter, op, point); });
+                          ArrayRef<int64_t> point, unsigned dim_offset) {
+    target.walk(
+        [&](NeighborOp op) { inlinePoint(rewriter, op, point, dim_offset); });
   }
 
   static auto flatten(OpBuilder& builder, ArrayRef<AffineExpr> exprs,
@@ -154,6 +156,8 @@ struct InstantiateNeighborhood : OpRewritePattern<NeighborhoodOp> {
       return false;
     };
 
+    const auto dim_offset = source.getDomain().size() - domain.size();
+
     // Create a trivial neighborhood per point, substituting the point into
     // every nested NeighborOp (self references still target this instance).
     const auto target_type = source.getNeighborhoodType().cloneWith(
@@ -167,7 +171,7 @@ struct InstantiateNeighborhood : OpRewritePattern<NeighborhoodOp> {
         for (auto& op : *source.getBody()) {
           builder.clone(op, mapping);
         }
-        inlinePoint(rewriter, *builder.getBlock(), point);
+        inlinePoint(rewriter, *builder.getBlock(), point, dim_offset);
 
         // Add all the cloned self users to the list of users.
         for (auto* const user : self.getUsers()) {
