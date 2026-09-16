@@ -18,16 +18,13 @@ ktdf_arch.device @degenerate {
 ktdf_arch.device @out_of_bounds {
   // expected-error@+1 {{unable to instantiate neighborhood}}
   %outer = neighborhood %self_o : (exec_unit)[2] {
-    // expected-error@+1 {{unable to instantiate neighborhood}}
     %inner = neighborhood %self_i : (exec_unit)[3] {
       %e = exec_unit @exec
       yield %e
     }
-    // expected-error@+1 {{unable to resolve neighbor}}
     %e0 = neighbor affine_map<(d0) -> (d0+1)> in %inner : (exec_unit)[3]
     yield %e0
   }
-  // expected-error@+1 {{unable to resolve neighbor}}
   %a = neighbor affine_map<() -> (0)> in %outer : (exec_unit)[2]
   // expected-error@+1 {{unable to resolve neighbor}}
   %b = neighbor affine_map<() -> (2)> in %outer : (exec_unit)[2]

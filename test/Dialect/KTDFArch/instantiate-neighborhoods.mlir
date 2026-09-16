@@ -56,6 +56,39 @@ ktdf_arch.device @nested {
   datapath %a to %b : exec_unit, exec_unit
 }
 
+// CHECK-LABEL: ktdf_arch.device @self
+ktdf_arch.device @self {
+  // CHECK-NEXT: %[[E_1_1:.+]] = exec_unit @exec_1_1
+  // CHECK-NEXT: %[[M_1_1:.+]] = memory @mem_1_1
+  // CHECK-NEXT: datapath %[[E_1_1]] to %[[M_1_1]]
+  // CHECK-NEXT: %[[E_1_2:.+]] = exec_unit @exec_1_2
+  // CHECK-NEXT: %[[M_1_2:.+]] = memory @mem_1_2
+  // CHECK-NEXT: datapath %[[E_1_2]] to %[[M_1_2]]
+  // CHECK-NEXT: %[[E_1_3:.+]] = exec_unit @exec_1_3
+  // CHECK-NEXT: %[[M_1_3:.+]] = memory @mem_1_3
+  // CHECK-NEXT: datapath %[[E_1_3]] to %[[M_1_3]]
+  // CHECK-NEXT: %[[E_2_1:.+]] = exec_unit @exec_2_1
+  // CHECK-NEXT: %[[M_2_1:.+]] = memory @mem_2_1
+  // CHECK-NEXT: datapath %[[E_2_1]] to %[[M_2_1]]
+  // CHECK-NEXT: %[[E_2_2:.+]] = exec_unit @exec_2_2
+  // CHECK-NEXT: %[[M_2_2:.+]] = memory @mem_2_2
+  // CHECK-NEXT: datapath %[[E_2_2]] to %[[M_2_2]]
+  // CHECK-NEXT: %[[E_2_3:.+]] = exec_unit @exec_2_3
+  // CHECK-NEXT: %[[M_2_3:.+]] = memory @mem_2_3
+  // CHECK-NEXT: datapath %[[E_2_3]] to %[[M_2_3]]
+ 
+  %outer = neighborhood %self_o : (exec_unit)[2] {
+    %inner = neighborhood %self_i : (exec_unit, memory)[3] {
+      %e = exec_unit @exec
+      %m = memory @mem {kind = "local"}
+      %this:2 = neighbor affine_map<(d0, d1) -> (d1)> in %self_i : (exec_unit, memory)[3]
+      datapath %this#0 to %this#1 : exec_unit, memory
+      yield %e, %m : exec_unit, memory
+    }
+    %e:2 = neighbor affine_map<(d0) -> (d0)> in %inner : (exec_unit, memory)[3]
+    yield %e#0
+  }
+}
 
 // CHECK-LABEL: ktdf_arch.device @ring
 ktdf_arch.device @ring {
