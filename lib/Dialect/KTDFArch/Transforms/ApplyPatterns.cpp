@@ -20,6 +20,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/DebugLog.h>
+#include <llvm/Support/LogicalResult.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/PDL/IR/PDL.h>
@@ -63,7 +64,11 @@ auto ktdfArchMappedTo(PatternRewriter& /*rewriter*/, PDLResultList& results,
   assert(values.size() == 1);
 
   auto* const op = values[0].cast<Operation*>();
-  const auto maps_to = getProperty<MapsToAttr>(op);
+  auto mappable = dyn_cast<Mappable>(op);
+  if (!mappable) {
+    return failure();
+  }
+  const auto maps_to = mappable.getMapsTo();
   if (!maps_to) {
     return failure();
   }
@@ -96,8 +101,11 @@ auto ktdfArchHasFeature(PatternRewriter& /*rewriter*/, PDLResultList& results,
 
 void ktdfArchMapTo(PatternRewriter& rewriter, Operation* op,
                    Attribute maps_to) {
-  rewriter.modifyOpInPlace(
-      op, [&]() { setProperty(op, cast<MapsToAttr>(maps_to)); });
+  rewriter.modifyOpInPlace(op, [&]() {
+    if (failed(cast<Mappable>(op).setMapsTo(cast<MapsToAttr>(maps_to)))) {
+      op->emitWarning("invalid mapping: can't map to ") << maps_to;
+    }
+  });
 }
 
 void ktdfArchSetFeature(PatternRewriter& rewriter, Operation* op,

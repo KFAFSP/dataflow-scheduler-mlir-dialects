@@ -25,7 +25,9 @@
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/LogicalResult.h>
+#include <llvm/Support/PointerLikeTypeTraits.h>
 #include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -33,7 +35,9 @@
 #include <cstddef>
 #include <type_traits>
 
+#include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchAttributes.h"  // IWYU pragma: keep
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchDialect.h"
+#include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchIntrinsics.h"  // IWYU pragma: keep
 
 namespace mlir::ktdf_arch {
 
@@ -108,5 +112,19 @@ template <class FeatureAttr>
 
 /// Auto-generated includes.
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchOpInterfaces.h.inc"  // IWYU pragma: export
+
+template <>
+struct llvm::PointerLikeTypeTraits<mlir::ktdf_arch::Resource> {
+  static auto getAsVoidPointer(mlir::ktdf_arch::Resource resource) -> void* {
+    return resource.getOperation();
+  }
+  static auto getFromVoidPointer(void* ptr) -> mlir::ktdf_arch::Resource {
+    return llvm::cast<mlir::ktdf_arch::Resource>(
+        PointerLikeTypeTraits<mlir::Operation*>::getFromVoidPointer(ptr));
+  }
+
+  static constexpr int NumLowBitsAvailable =
+      PointerLikeTypeTraits<mlir::Operation*>::NumLowBitsAvailable;
+};
 
 #endif  // DATAFLOW_SCHEDULER_DIALECT_KTDFARCH_KTDFARCHINTERFACES_H_

@@ -145,9 +145,43 @@ struct FeaturesAttr
 };
 
 /// Indicates the architecture element an operation is mapped to.
+///
+/// The attribute is either a bare `ResourceSpecAttr`, or an array that
+/// indicates a logical conjunction / ad-hoc union of these.
 struct MapsToAttr
     : IntrinsicAttr<&KTDFArchDialect::getMapsToAttrName, Attribute> {
+  using ValueType = ArrayRef<ResourceSpecAttr>;
+
+  [[nodiscard]] static auto classof(Attribute attr) -> bool {
+    return isa<ResourceSpecAttr, TypedArrayAttr<ResourceSpecAttr>>(attr);
+  }
+  [[nodiscard]] static auto classof(ResourceSpecAttr /*attr*/) -> bool {
+    return true;
+  }
+  [[nodiscard]] static auto classof(TypedArrayAttr<ResourceSpecAttr> /*attr*/)
+      -> bool {
+    return true;
+  }
+
   using IntrinsicAttr::IntrinsicAttr;
+
+  [[nodiscard]] static auto get(MLIRContext* ctx,
+                                ArrayRef<ResourceSpecAttr> resources)
+      -> MapsToAttr {
+    if (resources.size() == 1) {
+      return resources.front();
+    }
+    return TypedArrayAttr<ResourceSpecAttr>::get(ctx, resources);
+  }
+
+  [[nodiscard]] auto getValue() const -> ValueType;
+
+  /*implicit*/ MapsToAttr(UnitAttr attr)
+      : IntrinsicAttr(static_cast<Attribute>(attr).getImpl()) {}
+  /*implicit*/ MapsToAttr(ResourceSpecAttr attr)
+      : IntrinsicAttr(static_cast<Attribute>(attr).getImpl()) {}
+  /*implicit*/ MapsToAttr(TypedArrayAttr<ResourceSpecAttr> attr)
+      : IntrinsicAttr(static_cast<Attribute>(attr).getImpl()) {}
 };
 
 /// Indicates a set of mutexes that allocation of this resource must obey.

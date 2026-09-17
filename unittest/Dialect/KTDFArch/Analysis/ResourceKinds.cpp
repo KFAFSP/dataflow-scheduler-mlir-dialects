@@ -47,7 +47,7 @@ TEST_CASE("mlir::ktdf_arch::ResourceKinds") {
   auto& devices = analysis_manager.getAnalysis<DeviceManager>();
   auto& analysis = devices.getOrCreateView<ResourceKinds>(device);
 
-  llvm::DenseSet<Attribute> kinds;
+  llvm::DenseSet<KindAttr> kinds;
   llvm::SmallVector<Resource> resources;
   device->walk([&](Resource resource) {
     resources.push_back(resource);

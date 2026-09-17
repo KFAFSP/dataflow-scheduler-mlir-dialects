@@ -19,6 +19,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/iterator.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Value.h>
 
@@ -105,6 +106,47 @@ auto mlir::ktdf_arch::getFeature(Operation* op, StringAttr name)
   }
 
   return Feature(name, provided);
+}
+
+//===----------------------------------------------------------------------===//
+// Mappable
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+struct DefaultMappable : Mappable::ExternalModel<DefaultMappable, Operation*> {
+};
+
+}  // namespace
+
+auto Mappable::classof(Operation* op) -> bool {
+  return !isa<KTDFArchDialect>(op->getDialect()) &&
+         op->getParentOfType<DeviceOp>() == nullptr;
+}
+
+auto Mappable::getInterfaceFor(Operation* op) -> Concept* {
+  if (!isa<Mappable>(op)) {
+    return nullptr;
+  }
+
+  if (auto* const impl = Base::getInterfaceFor(op); impl) {
+    // The operation or the dialect specialized this interface.
+    return impl;
+  }
+
+  // The operation does not specialize this interface, use the default.
+  static DefaultMappable default_mappable;
+  return &default_mappable;
+}
+
+auto Mappable::getOrInheritMapsTo() -> std::pair<Mappable, MapsToAttr> {
+  for (auto self = *this; self; self = self->getParentOfType<Mappable>()) {
+    if (const auto mapping = self.getMapsTo(); mapping) {
+      return {self, mapping};
+    }
+  }
+
+  return {nullptr, nullptr};
 }
 
 //===----------------------------------------------------------------------===//

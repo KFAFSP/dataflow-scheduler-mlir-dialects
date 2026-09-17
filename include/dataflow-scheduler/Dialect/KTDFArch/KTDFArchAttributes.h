@@ -25,13 +25,14 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/PointerLikeTypeTraits.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributeInterfaces.h>
+#include <mlir/IR/BuiltinAttributes.h>
 
 #include <type_traits>
 
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchDialect.h"  // IWYU pragma: keep
-#include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchInterfaces.h"  // IWYU pragma: keep
 
 namespace mlir::ktdf_arch {
 
@@ -58,6 +59,46 @@ struct I64Attr : IntegerAttr {
   [[nodiscard]] auto getValue() const -> int64_t {
     return IntegerAttr::getValue().getSExtValue();
   }
+};
+
+/// Named constraint for an attribute that stores a resource kind.
+struct KindAttr : Attribute {
+  [[nodiscard]] static auto classof(Attribute attr) -> bool {
+    return !isa<UnitAttr, ArrayAttr, SymbolRefAttr>(attr);
+  }
+  [[nodiscard]] static auto classof(StringAttr /*attr*/) -> bool {
+    return true;
+  }
+
+  using Attribute::Attribute;
+
+  /*implicit*/ KindAttr(StringAttr attr)
+      : Attribute(static_cast<Attribute>(attr).getImpl()) {}
+
+  [[nodiscard]] static auto getFromOpaquePointer(const void* ptr) -> KindAttr {
+    return KindAttr(reinterpret_cast<const ImplType*>(ptr));
+  }
+};
+
+/// Named constraint for an attribute that specifies a device resource.
+///
+/// The attribute references a resource inside of an implicitly known device
+/// by its kind or unique identifier.
+struct ResourceSpecAttr : Attribute {
+  [[nodiscard]] static auto classof(Attribute attr) -> bool {
+    return isa<KindAttr, FlatSymbolRefAttr>(attr);
+  }
+  [[nodiscard]] static auto classof(KindAttr /*attr*/) -> bool { return true; }
+  [[nodiscard]] static auto classof(FlatSymbolRefAttr /*attr*/) -> bool {
+    return true;
+  }
+
+  using Attribute::Attribute;
+
+  /*implicit*/ ResourceSpecAttr(KindAttr attr)
+      : Attribute(static_cast<Attribute>(attr).getImpl()) {}
+  /*implicit*/ ResourceSpecAttr(FlatSymbolRefAttr attr)
+      : Attribute(static_cast<Attribute>(attr).getImpl()) {}
 };
 
 /// Named constraint for an attribute that stores a directed adjacency matrix.
@@ -104,6 +145,15 @@ struct AdjacencyMatrixAttr : ElementsAttr {
 
 }  // namespace mlir::ktdf_arch
 
+template <>
+struct llvm::PointerLikeTypeTraits<mlir::ktdf_arch::KindAttr>
+    : PointerLikeTypeTraits<mlir::Attribute> {
+  [[nodiscard]] static auto getFromVoidPointer(void* ptr)
+      -> mlir::ktdf_arch::KindAttr {
+    return mlir::ktdf_arch::KindAttr::getFromOpaquePointer(ptr);
+  }
+};
+
 /// Auto-generated includes.
 #define GET_ATTRDEF_CLASSES
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchAttributes.h.inc"  // IWYU pragma: export
@@ -129,8 +179,12 @@ struct TypedArrayAttr : ArrayAttr {
 
   using ArrayAttr::ArrayAttr;
 
-  static auto get(MLIRContext* context, ArrayRef<Value> values) -> TypedAttr {
-    return cast<TypedArrayAttr>(ArrayAttr::get(context, values));
+  static auto get(MLIRContext* context, ArrayRef<Value> values)
+      -> TypedArrayAttr {
+    return cast<TypedArrayAttr>(ArrayAttr::get(
+        context,
+        ArrayRef<Attribute>(static_cast<const Attribute*>(values.data()),
+                            values.size())));
   }
 
   [[nodiscard]] auto getValue() const -> ArrayRef<Value> {

@@ -27,6 +27,8 @@
 #include <mlir/IR/Attributes.h>
 #include <mlir/Pass/AnalysisManager.h>
 
+#include <type_traits>
+
 #include "dataflow-scheduler/Dialect/KTDFArch/Analysis/DeviceManager.h"
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArch.h"
 
@@ -54,11 +56,11 @@ class ResourceKinds : public DeviceView {
     explicit Kind(Resource exemplar) : exemplar_(exemplar) {}
 
     /// Gets the kind attribute.
-    [[nodiscard]] auto getKind() const -> Attribute {
+    [[nodiscard]] auto getKind() const -> KindAttr {
       return *this ? getExemplar().getKind() : nullptr;
     }
     /// @copydoc getKind()
-    /*implicit*/ operator Attribute() const { return getKind(); }
+    /*implicit*/ operator KindAttr() const { return getKind(); }
 
     /// Gets the exemplar.
     [[nodiscard]] auto getExemplar() const -> Resource { return exemplar_; }
@@ -67,7 +69,7 @@ class ResourceKinds : public DeviceView {
 
     /// Gets the known enclosing parent kinds.
     [[nodiscard]] auto getParentKinds() const
-        -> const llvm::SmallPtrSet<Attribute, 4> {
+        -> const llvm::SmallPtrSet<KindAttr, 4> {
       return parent_kinds_;
     }
 
@@ -82,7 +84,7 @@ class ResourceKinds : public DeviceView {
     friend class ResourceKinds;
 
     Resource exemplar_;
-    llvm::SmallPtrSet<Attribute, 4> parent_kinds_;
+    llvm::SmallPtrSet<KindAttr, 4> parent_kinds_;
   };
 
   /// Creates ResourceKinds for @p device .
@@ -95,15 +97,19 @@ class ResourceKinds : public DeviceView {
   /// @retval ResourceType  Exemplar for @p kind .
   /// @retval nullptr       No resource of @p kind or of different type.
   template <class ResourceType = Resource>
-  [[nodiscard]] auto getInstance(Attribute kind) const -> ResourceType {
+  [[nodiscard]] auto getInstance(KindAttr kind) const -> ResourceType {
     if (const auto it = map_.find(kind); it != map_.end()) {
-      return mlir::dyn_cast<ResourceType>(
-          it->second.getExemplar().getOperation());
+      if constexpr (std::is_same_v<ResourceType, Resource>) {
+        return it->second.getExemplar();
+      } else {
+        return mlir::dyn_cast<ResourceType>(
+            it->second.getExemplar().getOperation());
+      }
     }
     return nullptr;
   }
   /// Obtains an exemplar of @p kind , if any exists.
-  [[nodiscard]] auto operator[](Attribute kind) const -> const Kind& {
+  [[nodiscard]] auto operator[](KindAttr kind) const -> const Kind& {
     if (const auto it = map_.find(kind); it != map_.end()) {
       return it->second;
     }
@@ -113,21 +119,21 @@ class ResourceKinds : public DeviceView {
   }
 
   /// Collects all transitive parent kinds of @p kind .
-  void getAncestors(Attribute kind,
-                    llvm::SmallPtrSet<Attribute, 8>& result) const;
-  /// @copydoc getAncestors(Attribute, llvm::SmallSet<Attribute, 8> &)
-  [[nodiscard]] auto getAncestors(Attribute kind) const
-      -> llvm::SmallPtrSet<Attribute, 8> {
-    llvm::SmallPtrSet<Attribute, 8> result;
+  void getAncestors(KindAttr kind,
+                    llvm::SmallPtrSet<KindAttr, 8>& result) const;
+  /// @copydoc getAncestors(KindAttr, llvm::SmallSet<KindAttr, 8> &)
+  [[nodiscard]] auto getAncestors(KindAttr kind) const
+      -> llvm::SmallPtrSet<KindAttr, 8> {
+    llvm::SmallPtrSet<KindAttr, 8> result;
     getAncestors(kind, result);
     return result;
   }
 
   /// Collects all instances of @p kind .
-  void getInstances(Attribute kind,
+  void getInstances(KindAttr kind,
                     llvm::SmallVectorImpl<Resource>& result) const;
-  /// @copydoc getInstances(Attribute, llvm::SmallVectorImpl<Resource> &)
-  [[nodiscard]] auto getInstances(Attribute kind) const
+  /// @copydoc getInstances(KindAttr, llvm::SmallVectorImpl<Resource> &)
+  [[nodiscard]] auto getInstances(KindAttr kind) const
       -> llvm::SmallVector<Resource> {
     llvm::SmallVector<Resource> result;
     getInstances(kind, result);
@@ -136,7 +142,7 @@ class ResourceKinds : public DeviceView {
 
   /// Tries to get the @p PropertyAttr of an exemplar for @p kind .
   template <class PropertyAttr>
-  [[nodiscard]] auto getProperty(Attribute kind) const -> PropertyAttr {
+  [[nodiscard]] auto getProperty(KindAttr kind) const -> PropertyAttr {
     if (auto resource = getInstance(kind); resource) {
       return resource.getProperty<PropertyAttr>();
     }
@@ -146,7 +152,7 @@ class ResourceKinds : public DeviceView {
 
   /// Tries to get the @p FeatureAttr of an exemplar for @p kind .
   template <class FeatureAttr>
-  [[nodiscard]] auto getFeature(Attribute kind) const -> FeatureAttr {
+  [[nodiscard]] auto getFeature(KindAttr kind) const -> FeatureAttr {
     if (auto resource = getInstance(kind); resource) {
       return resource.getFeature<FeatureAttr>();
     }
@@ -164,7 +170,7 @@ class ResourceKinds : public DeviceView {
   // Container Interface
   //===--------------------------------------------------------------------===//
 
-  using map_type = llvm::DenseMap<Attribute, Kind>;
+  using map_type = llvm::DenseMap<KindAttr, Kind>;
   using value_type = Kind;
   using size_type = map_type::size_type;
 
@@ -186,13 +192,13 @@ class ResourceKinds : public DeviceView {
   [[nodiscard]] auto begin() const -> iterator { return map_.begin(); }
   [[nodiscard]] auto end() const -> iterator { return map_.end(); }
 
-  [[nodiscard]] auto find(Attribute kind) const -> iterator {
+  [[nodiscard]] auto find(KindAttr kind) const -> iterator {
     return map_.find(kind);
   }
 
  private:
   map_type map_;
-  Attribute default_compute_;
+  KindAttr default_compute_;
 };
 
 }  // namespace mlir::ktdf_arch

@@ -24,6 +24,7 @@
 #define DATAFLOW_SCHEDULER_DIALECT_KTDFARCH_KTDFARCHTYPES_H_
 
 #include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchAttributes.h"  // IWYU pragma: keep
+#include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchInterfaces.h"  // IWYU pragma: keep
 
 /// Auto-generated includes.
 #define GET_TYPEDEF_CLASSES

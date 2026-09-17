@@ -134,11 +134,22 @@ auto FeaturesAttr::verify(Operation* op) const -> LogicalResult {
 // MapsToAttr
 //===----------------------------------------------------------------------===//
 
+auto MapsToAttr::getValue() const -> ValueType {
+  if (isa<ArrayAttr>(*this)) {
+    return cast<TypedArrayAttr<ResourceSpecAttr>>(*this).getValue();
+  }
+  return ArrayRef(reinterpret_cast<const ResourceSpecAttr*>(this), 1);
+}
+
 auto KTDFArchDialect::verifyMapsToAttr(Operation* op,
                                        const NamedAttribute& attr)
     -> LogicalResult {
-  if (isa<KTDFArchDialect>(op->getDialect())) {
+  if (!isa<Mappable>(op)) {
     return emitIntrinsicError(op, attr) << "only valid on mappable ops";
+  }
+
+  if (!isa<MapsToAttr>(attr.getValue())) {
+    emitIntrinsicError(op, attr) << "expected (array of) resource specifier";
   }
 
   return success();
@@ -411,8 +422,9 @@ auto feature::IndirectAddressBuffer::verify(EmitErrorFn emit_error) const
   return success();
 }
 
-auto KTDFArchDialect::testFeatureIndirectAddressBuffer(
-    Attribute provided, const Feature& required) -> bool {
+auto KTDFArchDialect::testFeatureIndirectAddressBuffer(Attribute provided,
+                                                       const Feature& required)
+    -> bool {
   const auto required_value =
       cast<feature::IndirectAddressBuffer>(required.getValue());
   const auto provided_value = cast<feature::IndirectAddressBuffer>(provided);

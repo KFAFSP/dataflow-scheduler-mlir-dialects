@@ -5,10 +5,14 @@ ktdf_arch.device @memory_invalid_size {
   memory {size = "A"}
 }
 
+// -----
+
 ktdf_arch.device @switch_invalid_connectivity {
   // expected-error@+1 {{directed sparse or dense adjacency matrix}}
   switch[3] {connectivity = []}
 }
+
+// -----
 
 ktdf_arch.device @patterns_invalid_child {
   // expected-error@+1 {{expects child ops to be 'pdl.pattern'}}

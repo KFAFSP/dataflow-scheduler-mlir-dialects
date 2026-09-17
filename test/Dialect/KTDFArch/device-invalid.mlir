@@ -37,6 +37,14 @@ ktdf_arch.device @cousin_redefines_id {
 
 // -----
 
+// expected-note@+1 {{previous definition is here}}
+ktdf_arch.device @id_is_device_name {
+  // expected-error@+1 {{resource with id "id_is_device_name" redefined}}
+  exec_unit @id_is_device_name
+}
+
+// -----
+
 // expected-error@+1 {{expects child ops to be resources}}
 ktdf_arch.device @unexpected_op {
   // expected-note@+1 {{unexpected child is here}}

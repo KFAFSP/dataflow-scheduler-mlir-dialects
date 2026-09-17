@@ -20,6 +20,7 @@
 
 #include <llvm/ADT/SmallString.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/Mutex.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/Pass/AnalysisManager.h>
@@ -49,57 +50,35 @@ auto ResourceIds::assign(Resource resource, StringAttr id) -> bool {
     return false;
   }
 
-  if (!id) {
-    // Removing the identifier always succeeds.
-    if (const auto id_attr = resource.getIdAttr(); id_attr) {
-      map_.erase(id_attr);
-      resource.removeIdAttr();
+  llvm::sys::SmartScopedLock<true> lock(mutex_);
+
+  if (id != nullptr) {
+    // Can't override an identifier that is already in use by someone else.
+    if (const auto existing = map_.lookup(id); existing) {
+      return existing == resource;
     }
-    return true;
   }
 
-  // Can't override an identifier that is already in use by someone else.
-  if (const auto existing = map_.lookup(id); existing) {
-    return existing == resource;
-  }
-
-  // Remove the old mapping and attach the new identifier.
-  if (const auto id_attr = resource.getIdAttr(); id_attr) {
-    map_.erase(id_attr);
-  }
-  resource.setIdAttr(id);
-  map_[id] = resource;
+  updateImpl(resource, id);
   return true;
 }
 
 auto ResourceIds::assign(Resource resource, StringRef prefix) -> StringAttr {
-  // Come up with a prefix for the name.
-  llvm::SmallString<32> id(prefix);
-  const auto prefix_len = id.size();
-
-  // Make the id unique by counting up an index (but don't include 0).
-  StringAttr id_attr;
-  std::size_t index = 0;
-  while (true) {
-    id_attr = StringAttr::get(resource->getContext(), id);
-    const auto existing = map_.lookup(id_attr);
-    if (!existing || existing == resource) {
-      break;
-    }
-
-    id.resize(prefix_len);
-    id += '_';
-    id += std::to_string(++index);
+  // We can only assign identifiers to resources owned by our device.
+  if (!getDevice() || !getDevice().getDefinition()->isAncestor(resource)) {
+    return nullptr;
   }
 
-  return assign(resource, id_attr) ? id_attr : nullptr;
+  llvm::sys::SmartScopedLock<true> lock(mutex_);
+
+  return assignImpl(resource, prefix);
 }
 
 auto ResourceIds::getOrAssign(Resource resource,
                               std::optional<StringRef> prefix) -> StringAttr {
-  // Try to get the assigned identifier.
-  if (const auto id_attr = resource.getIdAttr(); id_attr) {
-    return id_attr;
+  // We can only assign identifiers to resources owned by our device.
+  if (!getDevice() || !getDevice().getDefinition()->isAncestor(resource)) {
+    return nullptr;
   }
 
   if (!prefix) {
@@ -116,7 +95,57 @@ auto ResourceIds::getOrAssign(Resource resource,
     }
   }
 
-  return assign(resource, *prefix);
+  llvm::sys::SmartScopedLock<true> lock(mutex_);
+
+  // Try to get the assigned identifier.
+  if (const auto id_attr = resource.getIdAttr(); id_attr) {
+    return id_attr;
+  }
+
+  return assignImpl(resource, *prefix);
+}
+
+void ResourceIds::updateImpl(Resource resource, StringAttr id) {
+  // Remove the old mapping and attach the new identifier.
+  if (const auto id_attr = resource.getIdAttr(); id_attr) {
+    map_.erase(id_attr);
+  }
+
+  if (id != nullptr) {
+    resource.setIdAttr(id);
+    map_[id] = resource;
+  } else {
+    resource.removeIdAttr();
+  }
+}
+
+auto ResourceIds::assignImpl(Resource resource, StringRef prefix)
+    -> StringAttr {
+  // Come up with a prefix for the name.
+  llvm::SmallString<32> id(prefix);
+  const auto prefix_len = id.size();
+
+  // Make the id unique by counting up an index (but don't include 0).
+  StringAttr id_attr;
+  std::size_t index = 0;
+  while (true) {
+    id_attr = StringAttr::get(resource->getContext(), id);
+    const auto existing = map_.lookup(id_attr);
+    if (existing == resource) {
+      // The resource already has an acceptable name.
+      return id_attr;
+    }
+    if (existing == nullptr) {
+      break;
+    }
+
+    id.resize(prefix_len);
+    id += '_';
+    id += std::to_string(++index);
+  }
+
+  updateImpl(resource, id_attr);
+  return id_attr;
 }
 
 MLIR_DEFINE_EXPLICIT_TYPE_ID(mlir::ktdf_arch::ResourceIds);

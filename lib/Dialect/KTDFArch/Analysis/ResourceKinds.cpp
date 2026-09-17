@@ -35,7 +35,7 @@ using namespace mlir::ktdf_arch;
 
 namespace {
 
-[[nodiscard]] auto getNearestParentKind(Resource resource) -> Attribute {
+[[nodiscard]] auto getNearestParentKind(Resource resource) -> KindAttr {
   while ((resource = resource->getParentOfType<Resource>())) {
     if (const auto kind = resource.getKind(); kind) {
       return kind;
@@ -87,8 +87,8 @@ ResourceKinds::ResourceKinds(const Device& device) : DeviceView(device) {
   }
 }
 
-void ResourceKinds::getAncestors(
-    Attribute kind, llvm::SmallPtrSet<Attribute, 8>& result) const {
+void ResourceKinds::getAncestors(KindAttr kind,
+                                 llvm::SmallPtrSet<KindAttr, 8>& result) const {
   const auto it = map_.find(kind);
   if (it == map_.end()) {
     return;
@@ -109,7 +109,7 @@ void ResourceKinds::getAncestors(
 }
 
 void ResourceKinds::getInstances(
-    Attribute kind, llvm::SmallVectorImpl<Resource>& result) const {
+    KindAttr kind, llvm::SmallVectorImpl<Resource>& result) const {
   if (!map_.contains(kind)) {
     return;
   }

@@ -48,18 +48,30 @@ class ResourceIds : public DeviceView {
   explicit ResourceIds(const Device& device);
 
   /// Obtains the resource with @p id , if it exists.
-  [[nodiscard]] auto lookup(StringAttr id) const -> Resource {
-    return map_.lookup(id);
+  ///
+  /// @tparam ResourceType  Expected resource type.
+  ///
+  /// @retval ResourceType  Resource with @p id .
+  /// @retval nullptr       No resource with @p id or of different type.
+  template <class ResourceType = Resource>
+  [[nodiscard]] auto lookup(StringAttr id) const -> ResourceType {
+    auto resource = map_.lookup(id);
+    if constexpr (std::is_same_v<ResourceType, Resource>) {
+      return resource;
+    } else {
+      return dyn_cast_if_present<ResourceType>(resource.getOperation());
+    }
   }
-  /// @copydoc lookup(StringAttr)
+  /// Obtains the resource with @p id , if it exists.
   [[nodiscard]] auto operator[](StringAttr id) const -> Resource {
     return lookup(id);
   }
   /// @copydoc lookup(StringAttr)
-  [[nodiscard]] auto lookup(StringRef id) const -> Resource {
-    return lookup(StringAttr::get(getContext(), id));
+  template <class ResourceType = Resource>
+  [[nodiscard]] auto lookup(StringRef id) const -> ResourceType {
+    return lookup<ResourceType>(StringAttr::get(getContext(), id));
   }
-  /// @copydoc lookup(StringRef)
+  /// Obtains the resource with @p id , if it exists.
   [[nodiscard]] auto operator[](StringRef id) const -> Resource {
     return lookup(id);
   }
@@ -98,7 +110,11 @@ class ResourceIds : public DeviceView {
   [[nodiscard]] auto end() const -> iterator { return map_.end(); }
 
  private:
+  void updateImpl(Resource resource, StringAttr id);
+  auto assignImpl(Resource resource, StringRef prefix) -> StringAttr;
+
   map_type map_;
+  llvm::sys::SmartMutex<true> mutex_;
 };
 
 }  // namespace mlir::ktdf_arch

@@ -193,7 +193,7 @@ class KTDFArch_ResourceOp<
   let arguments = !con(
     (ins 
       OptionalAttr<SymbolNameAttr>:$id,
-      DefaultValuedAttr<AnyAttr, "nullptr">:$kind
+      DefaultValuedAttr<KTDFArch_KindAttr, "nullptr">:$kind
     ),
     erasedAttrs
   );
@@ -286,7 +286,7 @@ def KTDFArch_GroupOp : KTDFArch_ResourceOp<"group", [
   let arguments = (ins 
     Variadic<KTDFArch_MemoryType>:$shared_memory,
     OptionalAttr<SymbolNameAttr>:$id,
-    DefaultValuedAttr<AnyAttr, "nullptr">:$kind
+    DefaultValuedAttr<KTDFArch_KindAttr, "nullptr">:$kind
   );
   let results = (outs Variadic<KTDFArch_ExecutionUnitType>:$shared_exec);
   let regions = (region SizedRegion<1>:$region);
@@ -427,7 +427,7 @@ def KTDFArch_MemoryOp : KTDFArch_NodeOp<
   let skipDefaultBuilders = 1;
   let builders = [
     OpBuilder<(ins 
-        "Attribute":$kind, 
+        "KindAttr":$kind, 
         CArg<"std::optional<int64_t>", "std::nullopt">:$size
     ), [{
       auto& props = $_state.getOrAddProperties<Properties>();
@@ -558,7 +558,7 @@ def KTDFArch_DatapathOp : KTDFArch_LinkOp<"datapath"> {
     KTDFArch_EndpointType:$source, 
     KTDFArch_EndpointType:$target,
     OptionalAttr<SymbolNameAttr>:$id,
-    DefaultValuedAttr<AnyAttr, "nullptr">:$kind
+    DefaultValuedAttr<KTDFArch_KindAttr, "nullptr">:$kind
   );
 
   let hasVerifier = 1;

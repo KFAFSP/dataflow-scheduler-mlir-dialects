@@ -26,6 +26,7 @@
 include "mlir/IR/OpBase.td"
 
 include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchAttributes.td"
+include "dataflow-scheduler/Dialect/KTDFArch/KTDFArchInterfaces.td"
 
 class KTDFArch_Type<string name, string typeMnemonic, list<Trait> traits = []>
     : TypeDef<KTDFArch_Dialect, name, traits> {

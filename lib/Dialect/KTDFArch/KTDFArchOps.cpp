@@ -218,6 +218,7 @@ auto DeviceOp::verify() -> LogicalResult {
 
 auto DeviceOp::verifyRegions() -> LogicalResult {
   llvm::StringMap<Operation*> ids;
+  ids[getName()] = *this;
 
   const auto visit = [&](Operation* op) -> WalkResult {
     auto resource = dyn_cast<Resource>(op);
