@@ -139,6 +139,48 @@ auto Mappable::getInterfaceFor(Operation* op) -> Concept* {
   return &default_mappable;
 }
 
+auto Mappable::getMapsTo(Operation* op) -> MapsToAttr {
+  if (auto mappable = llvm::dyn_cast<Mappable>(op); mappable) {
+    return mappable.getMapsTo();
+  }
+
+  return nullptr;
+}
+
+auto Mappable::setMapsTo(Operation* op, MapsToAttr maps_to) -> LogicalResult {
+  if (auto mappable = llvm::dyn_cast<Mappable>(op); mappable) {
+    return mappable.setMapsTo(maps_to);
+  }
+
+  return failure();
+}
+
+auto Mappable::removeMapsTo(Operation* op) -> MapsToAttr {
+  if (auto mappable = llvm::dyn_cast<Mappable>(op); mappable) {
+    return mappable.removeMapsTo();
+  }
+
+  return nullptr;
+}
+
+auto Mappable::verifyMapping(Operation* op, ArrayRef<Resource> resources)
+    -> LogicalResult {
+  if (auto mappable = llvm::dyn_cast<Mappable>(op); mappable) {
+    return mappable.verifyMapping(resources);
+  }
+
+  return success();
+}
+
+auto Mappable::getOrInheritMapsTo(Operation* op)
+    -> std::pair<Mappable, MapsToAttr> {
+  if (auto mappable = dyn_cast<Mappable>(op); mappable) {
+    return mappable.getOrInheritMapsTo();
+  }
+
+  return {nullptr, nullptr};
+}
+
 auto Mappable::getOrInheritMapsTo() -> std::pair<Mappable, MapsToAttr> {
   for (auto self = *this; self; self = self->getParentOfType<Mappable>()) {
     if (const auto mapping = self.getMapsTo(); mapping) {

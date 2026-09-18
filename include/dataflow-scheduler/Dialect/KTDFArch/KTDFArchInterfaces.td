@@ -209,7 +209,7 @@ def KTDFArch_Mappable : OpInterface<"Mappable"> {
 
   let methods = [
     InterfaceMethod<[{
-        Gets the attribute that indicates the resource mapping.
+        Gets the resource mapping as an attribute.
       }], 
       "MapsToAttr", "getMapsTo", (ins), 
       "", 
@@ -217,7 +217,7 @@ def KTDFArch_Mappable : OpInterface<"Mappable"> {
         return mlir::ktdf_arch::getProperty<MapsToAttr>($_op);
       }]>,
     InterfaceMethod<[{
-        Tries to set the attribute that indicates the resource mapping.
+        Tries to set the resource mapping from an attribute.
       }], 
       "LogicalResult", "setMapsTo", (ins "MapsToAttr":$maps_to), 
       "", 
@@ -226,7 +226,7 @@ def KTDFArch_Mappable : OpInterface<"Mappable"> {
         return llvm::success();
       }]>,
     InterfaceMethod<[{
-        Removes the attribute that indicates the resource mapping.
+        Removes the resource mapping as an attribute.
       }], 
       "MapsToAttr", "removeMapsTo", (ins), 
       "", 
@@ -250,6 +250,22 @@ def KTDFArch_Mappable : OpInterface<"Mappable"> {
     /// Gets the implementation for @p op , or the default.
     [[nodiscard]] static auto getInterfaceFor(Operation* op) -> Concept*;
 
+    /// Gets the resource mapping of @p op , if it has any.
+    [[nodiscard]] static auto getMapsTo(Operation* op) -> MapsToAttr;
+
+    /// Tries to set the resource mapping of @p op.
+    static auto setMapsTo(Operation* op, MapsToAttr maps_to) -> LogicalResult;
+
+    /// Tries to remove the resource mapping of @p op.
+    static auto removeMapsTo(Operation* op) -> MapsToAttr;
+
+    /// Verifies the mapping of @p op to @p resources .
+    static auto verifyMapping(Operation* op, ArrayRef<Resource> resources) -> LogicalResult;
+
+    /// Gets the resource mapping of @p op , or inherits from a parent.
+    /// 
+    /// See getOrInheritMapsTo() for more information.
+    [[nodiscard]] static auto getOrInheritMapsTo(Operation* op) -> std::pair<Mappable, MapsToAttr>;
     /// Gets the resource mapping of this op, or inherits it from a parent.
     ///
     /// Walks the IR upwards from @p mappable , returning the value of the first

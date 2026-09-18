@@ -59,6 +59,10 @@ struct I64Attr : IntegerAttr {
   [[nodiscard]] auto getValue() const -> int64_t {
     return IntegerAttr::getValue().getSExtValue();
   }
+
+  [[nodiscard]] static auto getFromOpaquePointer(const void* ptr) -> I64Attr {
+    return I64Attr(reinterpret_cast<const mlir::AttributeStorage*>(ptr));
+  }
 };
 
 /// Named constraint for an attribute that stores a resource kind.
@@ -99,6 +103,11 @@ struct ResourceSpecAttr : Attribute {
       : Attribute(static_cast<Attribute>(attr).getImpl()) {}
   /*implicit*/ ResourceSpecAttr(FlatSymbolRefAttr attr)
       : Attribute(static_cast<Attribute>(attr).getImpl()) {}
+
+  [[nodiscard]] static auto getFromOpaquePointer(const void* ptr)
+      -> ResourceSpecAttr {
+    return ResourceSpecAttr(reinterpret_cast<const ImplType*>(ptr));
+  }
 };
 
 /// Named constraint for an attribute that stores a directed adjacency matrix.
@@ -141,6 +150,11 @@ struct AdjacencyMatrixAttr : ElementsAttr {
   [[nodiscard]] auto getDim() const -> int64_t {
     return getShapedType().getDimSize(0);
   }
+
+  [[nodiscard]] static auto getFromOpaquePointer(const void* ptr)
+      -> AdjacencyMatrixAttr {
+    return AdjacencyMatrixAttr(reinterpret_cast<const ImplType*>(ptr));
+  }
 };
 
 }  // namespace mlir::ktdf_arch
@@ -151,6 +165,15 @@ struct llvm::PointerLikeTypeTraits<mlir::ktdf_arch::KindAttr>
   [[nodiscard]] static auto getFromVoidPointer(void* ptr)
       -> mlir::ktdf_arch::KindAttr {
     return mlir::ktdf_arch::KindAttr::getFromOpaquePointer(ptr);
+  }
+};
+
+template <>
+struct llvm::PointerLikeTypeTraits<mlir::ktdf_arch::ResourceSpecAttr>
+    : PointerLikeTypeTraits<mlir::Attribute> {
+  [[nodiscard]] static auto getFromVoidPointer(void* ptr)
+      -> mlir::ktdf_arch::ResourceSpecAttr {
+    return mlir::ktdf_arch::ResourceSpecAttr::getFromOpaquePointer(ptr);
   }
 };
 
