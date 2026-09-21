@@ -201,12 +201,21 @@ auto ktdf_arch::getPatterns(const Device& device, PDLPatternModule& patterns,
 
 auto PatternCache::get(const PatternGroups& enabled_groups)
     -> FrozenRewritePatternSet {
-  llvm::sys::SmartScopedLock<true> lock(mutex_);
-
-  if (const auto it = map_.find(enabled_groups); it != map_.end()) {
-    return it->second;
+  {
+    llvm::sys::SmartScopedLock<true> lock(mutex_);
+    if (const auto it = map_.find(enabled_groups); it != map_.end()) {
+      return it->second;
+    }
   }
 
+  // Built with the lock released, because freezing a PDL module runs a pass
+  // manager of its own: it hands the patterns to the MLIRContext's thread pool
+  // and waits for them. This pass is itself run on that pool, once per
+  // function, and a pool thread that is waiting for a task group also runs
+  // whatever else is queued while it waits -- so it can pick up a sibling
+  // function's run of this pass and arrive back here. Holding the lock across
+  // that wait deadlocks: the threads that would have finished the freeze stop
+  // on the lock instead, and the thread that holds it is waiting for them.
   PDLPatternModule pdl_patterns;
   const auto num_patterns =
       getPatterns(getDevice(), pdl_patterns, enabled_groups);
@@ -227,7 +236,10 @@ auto PatternCache::get(const PatternGroups& enabled_groups)
     result = FrozenRewritePatternSet(std::move(pdl_patterns));
   }
 
-  return map_[enabled_groups] = result;
+  // Two callers that both miss build a set each; the first one back files
+  // its own and the others take that, so every caller still gets one set.
+  llvm::sys::SmartScopedLock<true> lock(mutex_);
+  return map_.try_emplace(enabled_groups, std::move(result)).first->second;
 }
 
 void PatternCache::registerNativeFunctions(PDLPatternModule& patterns) {
