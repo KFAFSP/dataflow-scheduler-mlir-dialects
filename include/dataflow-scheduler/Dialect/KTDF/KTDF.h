@@ -23,6 +23,7 @@
 #ifndef DATAFLOW_SCHEDULER_DIALECT_KTDF_KTDF_H_
 #define DATAFLOW_SCHEDULER_DIALECT_KTDF_KTDF_H_
 
+#include <llvm/Support/PointerLikeTypeTraits.h>
 #include <mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/OpDefinition.h>
@@ -46,6 +47,15 @@ struct FifoResource : public mlir::SideEffects::Resource::Base<FifoResource> {
 /// Auto-generated includes.
 #define GET_OP_CLASSES
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h.inc"
+
+template <>
+struct llvm::PointerLikeTypeTraits<mlir::ktdf::StageOp>
+    : PointerLikeTypeTraits<mlir::Operation*> {
+  [[nodiscard]] static auto getFromVoidPointer(void* ptr)
+      -> mlir::ktdf::StageOp {
+    return mlir::ktdf::StageOp::getFromOpaquePointer(ptr);
+  }
+};
 
 namespace mlir::ktdf {
 
@@ -72,7 +82,9 @@ class PipelinePrivatizer {
   /// in its canonical form, even if no modifications are made.
   explicit PipelinePrivatizer(RewriterBase& rewriter, PipelineOp pipeline,
                               bool force_recreate = false);
-  ~PipelinePrivatizer();
+
+  /// Finalizes the outstanding modifications to the pipeline.
+  ~PipelinePrivatizer() { finalize(); }
 
   PipelinePrivatizer(PipelinePrivatizer&&) = delete;
   PipelinePrivatizer(const PipelinePrivatizer&) = delete;
@@ -87,6 +99,9 @@ class PipelinePrivatizer {
     return isPrivate(op->getBlock());
   }
 
+  /// Gets the underlying pipeline.
+  [[nodiscard]] auto getPipeline() -> PipelineOp { return pipeline_; }
+
   /// Attempts to make @p op a private result.
   ///
   /// Privating fails if the SSA property would be broken by moving @p op :
@@ -97,6 +112,22 @@ class PipelinePrivatizer {
   ///
   /// @return Whether @p op was privated.
   auto makePrivate(Operation* op) -> LogicalResult;
+
+  /// Creates a new token inside the private region.
+  [[nodiscard]] auto createToken(std::optional<Location> loc = std::nullopt)
+      -> TypedValue<TokenType>;
+  /// Creates a new FIFO inside the private region.
+  [[nodiscard]] auto createFifo(ArrayRef<FifoSlotType> slots,
+                                ValueRange dynamic_sizes = {},
+                                std::optional<Location> loc = std::nullopt)
+      -> ValueRange;
+
+  /// Finalizes the outstanding modifications to the pipeline.
+  ///
+  /// If there are no modifications to perform, does nothing. After finalizing,
+  /// the PipelinePrivatizer will be in the state as if it had been constructed
+  /// on the result, without any outstanding modifications.
+  void finalize();
 
  private:
   RewriterBase& rewriter_;

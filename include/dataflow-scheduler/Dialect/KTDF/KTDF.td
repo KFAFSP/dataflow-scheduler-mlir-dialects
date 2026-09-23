@@ -562,6 +562,24 @@ def KTDF_StageOp : KTDF_Op<"stage", [
         "ValueRange":$depends_out, 
         CArg<"function_ref<void(OpBuilder&, Location)>", "{}">:$body_builder)>
   ];
+
+  let extraClassDeclaration = [{
+    /// Determines whether this stage has an in dependency on @p operand .
+    [[nodiscard]] auto isInDependency(OpOperand& operand) -> bool;
+    
+    /// Modifies the op in-place to add an input dependency token.
+    ///
+    /// @return Whether a new operand was added.
+    auto addInDependency(TypedValue<TokenType> token) -> bool;
+
+    /// Determines whether this stage has an out dependency on @p operand .
+    [[nodiscard]] auto isOutDependency(OpOperand& operand) -> bool;
+
+    /// Modifies the op in-place to add an output dependency token.
+    ///
+    /// @return Whether a new operand was added.
+    auto addOutDependency(TypedValue<TokenType> token) -> bool;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -665,7 +683,12 @@ def KTDF_DataTransferOp : KTDF_Op<"data_transfer", [
       "ArrayRef<int64_t>":$source_sizes,
       "Value":$destination, "AffineMap":$dest_map,
       "ValueRange":$dest_indices,
-      "ArrayRef<int64_t>":$dest_sizes)>
+      "ArrayRef<int64_t>":$dest_sizes)>,
+    OpBuilder<(ins "Value":$source, "Value":$destination), [{
+      build($_builder, $_state, 
+        source, AffineMap{}, ValueRange{}, ArrayRef<int64_t>{},
+        destination, AffineMap{}, ValueRange{}, ArrayRef<int64_t>{});
+    }]>
   ];
 
   let extraClassDeclaration = [{
