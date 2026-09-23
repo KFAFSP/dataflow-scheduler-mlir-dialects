@@ -40,7 +40,13 @@ class PipelineBuilder {
 
  public:
   using BodyBuilderFn = function_ref<void(OpBuilder&, Location)>;
+  /// Indicates into which stage of a pipeline an op should be placed.
   using Placement = llvm::PointerUnion<Attribute, StageOp>;
+  /// Function that decides the placement of @p op inside a pipeline.
+  ///
+  /// @retval nullopt   Do not put @p op in the pipeline.
+  /// @retval Attribute Put @p op in the stage for the given unit/units.
+  /// @retval Stage     Put @p op in this exact stage.
   using PlacementFn = function_ref<std::optional<Placement>(Operation* op)>;
 
   /// Creates a `ktdf.pipeline` using @p builder and obtains a builder for it.
