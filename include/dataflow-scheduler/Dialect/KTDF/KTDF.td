@@ -26,6 +26,7 @@
 include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/DestinationStyleOpInterface.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
@@ -776,6 +777,46 @@ def KTDF_DataTransferOp : KTDF_Op<"data_transfer", [
     /// Implements AffineMapAccessInterface.
     /// Returns the AffineMapAttr associated with 'memref'.
     NamedAttribute getAffineMapAttrForMemRef(Value memref);
+  }];
+}
+
+def KTDF_ViaOp : KTDF_Op<"via", [Pure, SameOperandsAndResultType]> {
+  let summary = "Places a routing constraint on a value";
+  let description = [{
+    The `ktdf.via` operation represents an implicit data movement constraint in
+    the dataflow pipeline. It indicates that the value has to pass through the
+    specified unit or memory.
+    
+    Adjacent hops via the same unit are canonicalized away, but there is no
+    architecture aware canonicalization. These hops have to name legal endpoints
+    in the corresponding architecture, between which a legal path must exist, or
+    the program is ill-formed.
+
+    Example:
+    ```mlir
+    %via = ktdf.via["L1"] %tile : tensor<4x64xf16>
+    ```
+  }];
+
+  let arguments = (ins 
+    AnyTypeOf<[AnyRankedTensor, AnyMemRef], "", "::mlir::ShapedType">:$operand, 
+    ArrayAttr:$hops);
+  let results = (outs AnyShaped:$result);
+
+  let assemblyFormat = "``$hops $operand attr-dict `:` type($operand)";
+
+  let builders = [
+    OpBuilder<(ins "Value":$operand, "Attribute":$hop), [{
+      build($_builder, $_state, operand, $_builder.getArrayAttr({hop}));
+    }]>
+  ];
+
+  let hasFolder = 1;
+
+  let extraClassDeclaration = [{
+    /// Follows this chain of `via` operations until a source is found.
+    [[nodiscard]] auto collectHops(SmallVectorImpl<Attribute>& hops) 
+      -> TypedValue<ShapedType>;
   }];
 }
 

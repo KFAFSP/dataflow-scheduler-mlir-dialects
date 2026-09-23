@@ -70,3 +70,14 @@ func.func @erase_empty_pipeline() {
   // CHECK: return
   return
 }
+
+// CHECK-LABEL: func.func @combine_vias(
+// CHECK-SAME:    %[[IN:.+]]: tensor<4xf16>
+func.func @combine_vias(%in: tensor<4xf16>) -> tensor<4xf16> {
+  // CHECK-NEXT: %[[OUT:.+]] = ktdf.via["A", "B", "C", "A"] %[[IN]]
+  %hop1 = ktdf.via["A", "A", "B"] %in : tensor<4xf16>
+  %hop2 = ktdf.via["B", "C"] %hop1 : tensor<4xf16>
+  %hop3 = ktdf.via["A"] %hop2 : tensor<4xf16>
+  // CHECK-NEXT: return %[[OUT]]
+  return %hop3 : tensor<4xf16>
+}

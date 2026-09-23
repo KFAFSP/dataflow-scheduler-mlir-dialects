@@ -695,6 +695,37 @@ void DataTransferOp::getEffects(
 }
 
 //===----------------------------------------------------------------------===//
+// ViaOp
+//===----------------------------------------------------------------------===//
+
+auto ViaOp::collectHops(SmallVectorImpl<Attribute>& hops)
+    -> TypedValue<ShapedType> {
+  const auto begin = hops.size();
+
+  TypedValue<ShapedType> result;
+  for (auto hop = *this; hop;) {
+    llvm::append_range(hops, llvm::reverse(hop.getHops()));
+    result = hop.getOperand();
+    hop = result.getDefiningOp<ViaOp>();
+  }
+
+  std::reverse(hops.data() + begin, hops.end());
+  return result;
+}
+
+auto ViaOp::fold(FoldAdaptor /*adaptor*/) -> OpFoldResult {
+  if (auto prev = getOperand().getDefiningOp<ViaOp>(); prev) {
+    // Combine the hops, removing any redundant ones.
+    SmallVector<Attribute> hops;
+    setOperand(collectHops(hops));
+    hops.erase(llvm::unique(hops), hops.end());
+    setHopsAttr(ArrayAttr::get(getContext(), hops));
+  }
+
+  return nullptr;
+}
+
+//===----------------------------------------------------------------------===//
 // IndDataTransferOp
 //===----------------------------------------------------------------------===//
 
