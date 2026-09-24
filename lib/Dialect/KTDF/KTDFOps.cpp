@@ -765,12 +765,12 @@ void IndDataTransferOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>&
         effects) {
   // Effect assignment (consistent with DataTransferOp::getEffects):
-  //   ind_src memref: Read             — IAB read to obtain scatter/gather addr
-  //   dir_src memref: Read             — data source
-  //   dir_src fifo:   Read + Write     — consuming a FIFO slot mutates its
-  //   state ind_dst memref: Read             — IAB read to obtain scatter dest
-  //   address dir_dst memref: Write            — data destination dir_dst fifo:
-  //   Write            — producing into a FIFO slot
+  //   ind_src memref: Read            — IAB read to obtain scatter/gather addr
+  //   dir_src memref: Read            — data source
+  //   dir_src fifo:   Read + Write    — consuming a FIFO slot mutates its state
+  //   ind_dst memref: Read            — IAB read to obtain scatter dest address
+  //   dir_dst memref: Write           — data destination
+  //   dir_dst fifo:   Write           — producing into a FIFO slot
 
   // IAB memrefs are always reads.
   if (isGather())
