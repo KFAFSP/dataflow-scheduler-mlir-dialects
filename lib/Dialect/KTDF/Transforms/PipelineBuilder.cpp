@@ -75,7 +75,7 @@ auto PipelineBuilder::addDependency(StageOp producer, StageOp consumer)
 
   auto token = tokens_.lookup(producer);
   if (!token) {
-    token = createToken(producer->getLoc());
+    tokens_[producer] = token = createToken(producer->getLoc());
     modifyOpInPlace(producer, [&]() { producer.addOutDependency(token); });
   }
 
@@ -286,7 +286,7 @@ auto PipelineBuilder::insert(Operation* op, StageOp stage) -> LogicalResult {
 
   LDBG() << "trying to insert";
   LDBG() << "    op: " << OpWithFlags(op, kSkipRegions);
-  LDBG() << "  into: " << OpWithFlags(stage);
+  LDBG() << "  into: " << OpWithFlags(stage, kSkipRegions);
 
   const auto is_in_pipeline = [&](Operation* op) -> bool {
     return getPipeline()->isAncestor(op) || isPrivate(op);
@@ -386,6 +386,8 @@ void PipelineBuilder::insert(ArrayRef<Operation*> ops, PlacementFn placement_fn,
     const auto split = work_list.size();
     for (auto needs : op->getOperands()) {
       if (const auto wants = dyn_cast<OpResult>(needs); wants) {
+        LDBG() << "inserted op wants "
+               << OpWithFlags(wants.getOwner(), kSkipRegions);
         work_list.push_back(wants.getOwner());
       }
     }
@@ -444,7 +446,7 @@ void PipelineBuilder::setInsertPointToRead(StageOp stage) {
 
 namespace {
 
-[[nodiscard]] auto getSingleUser(mlir::Value value) -> mlir::Operation* {
+[[nodiscard]] auto getSingleUser(Value value) -> Operation* {
   const auto users = value.getUsers();
   if (users.empty() || std::next(users.begin()) != users.end()) {
     return nullptr;
@@ -453,7 +455,7 @@ namespace {
 }
 
 template <class OpType>
-[[nodiscard]] auto getSingleUserOfType(mlir::Value value) -> OpType {
+[[nodiscard]] auto getSingleUserOfType(Value value) -> OpType {
   return dyn_cast_if_present<OpType>(getSingleUser(value));
 }
 
@@ -496,39 +498,6 @@ void PipelineBuilder::erase(StageOp stage) {
 }
 
 //===----------------------------------------------------------------------===//
-// mlir::ktdf::unrollVia
-//===----------------------------------------------------------------------===//
-
-auto mlir::ktdf::unrollVia(RewriterBase& rewriter, ViaOp via) -> LogicalResult {
-  SmallVector<Attribute> hops;
-  auto source = via.collectHops(hops);
-  if (hops.size() == 1) {
-    return failure();
-  }
-
-  for (auto hop : ArrayRef(hops).drop_back()) {
-    source = ViaOp::create(rewriter, via.getLoc(), source, hop);
-  }
-
-  auto prev = via.getOperand().getDefiningOp<ViaOp>();
-  rewriter.modifyOpInPlace(via, [&]() {
-    via.setOperand(source);
-    via.setHopsAttr(rewriter.getArrayAttr({hops.back()}));
-  });
-
-  while (prev) {
-    via = prev;
-    prev = prev.getOperand().getDefiningOp<ViaOp>();
-
-    if (via->use_empty()) {
-      rewriter.eraseOp(via);
-    }
-  }
-
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // mlir::ktdf::eliminiateVia
 //===----------------------------------------------------------------------===//
 
@@ -536,7 +505,7 @@ auto mlir::ktdf::eliminateVia(RewriterBase& rewriter, ViaOp via)
     -> LogicalResult {
   auto write = getSingleUserOfType<WriteToFifoOp>(via);
   auto read = via.getOperand().getDefiningOp<ReadFromFifoOp>();
-  if (!read->hasOneUse() || !write || !read) {
+  if (!write || !read || !read->hasOneUse()) {
     return failure();
   }
 

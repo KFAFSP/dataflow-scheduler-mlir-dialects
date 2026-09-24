@@ -163,13 +163,6 @@ class PipelineBuilder : public PipelinePrivatizer {
   StageDependency dependencies_;
 };
 
-/// Unrolls @p via into individual hops if needed.
-///
-/// @pre    `rewriter` is positioned before @p via .
-///
-/// @return Success if the IR was modified, otherwise failure.
-auto unrollVia(RewriterBase& rewriter, ViaOp via) -> LogicalResult;
-
 /// Eliminates @p via if possible.
 ///
 /// If @p via has no users, it is erased. If @p via is the single user of a
