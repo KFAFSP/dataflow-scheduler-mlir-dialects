@@ -29,7 +29,9 @@
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/Dominance.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 
+#include "dataflow-scheduler/Dialect/KTDF/Analysis/StageDependency.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
 
 #define DEBUG_TYPE "ktdf-pipeline-builder"
@@ -43,92 +45,47 @@ const auto kSkipRegions = OpPrintingFlags().skipRegions();
 
 }  // namespace
 
-PipelineBuilder::PipelineBuilder(const OpBuilder& builder, Location loc)
-    : rewriter_(builder),
-      privatizer_(rewriter_, PipelineOp::create(rewriter_, loc)) {
-  rewriter_.setInsertionPointToStart(privatizer_.getPipeline().getBody());
-}
-
-auto PipelineBuilder::getStage(Attribute unit_or_units) const -> StageOp {
-  auto units = dyn_cast_if_present<ArrayAttr>(unit_or_units);
-  if (!units && unit_or_units) {
-    units = ArrayAttr::get(rewriter_.getContext(), {unit_or_units});
+auto PipelineBuilder::toUnits(Attribute attr) const -> ArrayAttr {
+  auto units = dyn_cast_if_present<ArrayAttr>(attr);
+  if (!units && attr) {
+    units = ArrayAttr::get(getContext(), {attr});
   }
 
-  return getStage(units);
+  return units;
 }
 
 auto PipelineBuilder::createStage(ArrayAttr units, BodyBuilderFn body_builder,
                                   std::optional<Location> loc) -> StageOp {
-  auto result = StageOp::create(
-      rewriter_, loc.value_or(privatizer_.getPipeline().getLoc()), {}, {},
-      body_builder);
+  auto result = StageOp::create(*this, loc.value_or(getPipeline().getLoc()), {},
+                                {}, body_builder);
   if (units) {
     result.setApplicableUnitsAttr(units);
     units_to_stage_[units] = result;
   }
-  rewriter_.setInsertionPoint(result);
+  setInsertionPoint(result);
   return result;
-}
-
-auto PipelineBuilder::getOrCreateStage(Attribute unit_or_units,
-                                       BodyBuilderFn body_builder,
-                                       std::optional<Location> loc) -> StageOp {
-  auto units = dyn_cast_if_present<ArrayAttr>(unit_or_units);
-  if (!units && unit_or_units) {
-    units = rewriter_.getArrayAttr({unit_or_units});
-  }
-
-  return getOrCreateStage(units, body_builder, loc);
 }
 
 auto PipelineBuilder::addDependency(StageOp producer, StageOp consumer)
     -> bool {
-  if (producer->getParentOp() != privatizer_.getPipeline() ||
-      consumer->getParentOp() != privatizer_.getPipeline()) {
+  if (producer->getParentOp() != getPipeline() ||
+      consumer->getParentOp() != getPipeline()) {
     return false;
   }
 
   auto token = tokens_.lookup(producer);
   if (!token) {
-    token = privatizer_.createToken(producer->getLoc());
-    rewriter_.modifyOpInPlace(producer,
-                              [&]() { producer.addOutDependency(token); });
+    token = createToken(producer->getLoc());
+    modifyOpInPlace(producer, [&]() { producer.addOutDependency(token); });
   }
 
-  rewriter_.startOpModification(consumer);
+  startOpModification(consumer);
   if (!consumer.addInDependency(token)) {
-    rewriter_.cancelOpModification(consumer);
+    cancelOpModification(consumer);
     return false;
   }
-  rewriter_.finalizeOpModification(consumer);
-
-  llvm::SmallVector<std::pair<StageOp, StageOp>> work_list{
-      {producer, consumer}};
-  while (!work_list.empty()) {
-    const auto edge = work_list.pop_back_val();
-    if (!dependencies_.insert(edge).second) {
-      continue;
-    }
-
-    for (auto token : producer.getDependsIn()) {
-      for (auto& use : token.getUses()) {
-        if (auto transitive = dyn_cast<StageOp>(use.getOwner());
-            transitive && transitive.isInDependency(use)) {
-          work_list.emplace_back(transitive, consumer);
-        }
-      }
-    }
-
-    for (auto token : consumer.getDependsOut()) {
-      for (auto& use : token.getUses()) {
-        if (auto transitive = dyn_cast<StageOp>(use.getOwner());
-            transitive && transitive.isOutDependency(use)) {
-          work_list.emplace_back(producer, transitive);
-        }
-      }
-    }
-  }
+  finalizeOpModification(consumer);
+  dependencies_.insert(consumer, producer);
   return true;
 }
 
@@ -152,29 +109,6 @@ namespace {
   }
 
   return units.size() == 1 ? units.getValue().front() : units;
-}
-
-void setWriteInsertionPoint(OpBuilder& builder, StageOp stage) {
-  auto& body = *stage.getBody();
-  if (body.empty()) {
-    builder.setInsertionPointToStart(&body);
-    return;
-  }
-
-  auto it = std::prev(body.end());
-  while (it != body.begin() && isa<WriteToFifoOp>(&*it)) {
-    --it;
-  }
-  builder.setInsertionPointAfter(&*it);
-}
-
-void setReadInsertionPoint(OpBuilder& builder, StageOp stage) {
-  auto& body = *stage.getBody();
-  auto it = body.begin();
-  while (it != body.end() && isa<ReadFromFifoOp>(&*it)) {
-    ++it;
-  }
-  builder.setInsertionPoint(&body, it);
 }
 
 }  // namespace
@@ -202,7 +136,7 @@ auto PipelineBuilder::forwardToConsumer(Value value, StageOp consumer)
     // available to the consumer.
     return nullptr;
   }
-  if (privatizer_.isPrivate(producer.getOwner())) {
+  if (isPrivate(producer.getOwner())) {
     // The producer is going to be private, we don't have to do anything.
     return value;
   }
@@ -216,8 +150,7 @@ auto PipelineBuilder::forwardToConsumer(Value value, StageOp consumer)
     return nullptr;
   }
   auto producer_stage = producer.getOwner()->getParentOfType<StageOp>();
-  if (!producer_stage ||
-      producer_stage->getParentOp() != privatizer_.getPipeline()) {
+  if (!producer_stage || producer_stage->getParentOp() != getPipeline()) {
     // We're not in charge of this producer and can't forward its value.
     return nullptr;
   }
@@ -237,20 +170,19 @@ auto PipelineBuilder::forwardToConsumer(Value value, StageOp consumer)
 
   // Create the appropriate type for the slot, which flattens the elements.
   const auto slot_type = FifoSlotType::get(
-      rewriter_.getContext(), producer_unit, consumer_unit,
-      value_type.getNumElements(), value_type.getElementType());
-  const auto slot =
-      privatizer_.createFifo({slot_type}, {}, consumer->getLoc()).front();
+      getContext(), producer_unit, consumer_unit, value_type.getNumElements(),
+      value_type.getElementType());
+  const auto slot = createFifo({slot_type}, {}, consumer->getLoc()).front();
 
   // On the producer side, create a new write to the slot.
-  OpBuilder::InsertionGuard guard(rewriter_);
-  setWriteInsertionPoint(rewriter_, producer_stage);
-  WriteToFifoOp::create(rewriter_, consumer->getLoc(), producer, slot);
+  InsertionGuard guard(*this);
+  setInsertPointToWrite(producer_stage);
+  WriteToFifoOp::create(*this, consumer->getLoc(), producer, slot);
 
   // On the consumer side, create a new read from the slot.
-  setReadInsertionPoint(rewriter_, consumer);
-  auto read = ReadFromFifoOp::create(rewriter_, consumer->getLoc(),
-                                     value.getType(), slot);
+  setInsertPointToRead(consumer);
+  auto read =
+      ReadFromFifoOp::create(*this, consumer->getLoc(), value.getType(), slot);
   reads.push_back(read);
 
   // Introduce a dependency between producer and consumer via private tokens.
@@ -258,85 +190,18 @@ auto PipelineBuilder::forwardToConsumer(Value value, StageOp consumer)
   return read;
 }
 
-namespace {
-
-void dominanceSort(MutableArrayRef<Operation*> op, DominanceInfo& dominance) {
-  llvm::stable_sort(op, [&](Operation* lhs, Operation* rhs) -> bool {
-    return dominance.dominates(lhs, rhs);
-  });
-}
-
-}  // namespace
-
-auto PipelineBuilder::naturalPlacement(Operation* op)
-    -> std::optional<Placement> {
+auto PipelineBuilder::naturalPlacement(Operation* op) -> Placement {
   StageOp result;
   for (auto* const user : op->getUsers()) {
     auto consumer_stage = user->getParentOfType<StageOp>();
     if (!consumer_stage || (result && consumer_stage != result)) {
-      return std::nullopt;
+      return nullptr;
     }
 
     result = consumer_stage;
   }
 
   return result;
-}
-
-void PipelineBuilder::insert(ArrayRef<Operation*> ops, PlacementFn placement,
-                             DominanceInfo& dominance) {
-  // Initialize the work list in reverse order, since we're popping from the
-  // back and want to keep the order (to preserve SSA property).
-  llvm::SmallVector<Operation*> work_list(ops.rbegin(), ops.rend());
-  while (!work_list.empty()) {
-    auto* const op = work_list.pop_back_val();
-    LDBG() << "trying to insert " << OpWithFlags(op, kSkipRegions);
-
-    const auto is_in_pipeline = [&](Operation* op) -> bool {
-      return privatizer_.getPipeline()->isAncestor(op) ||
-             privatizer_.isPrivate(op);
-    };
-    if (is_in_pipeline(op)) {
-      // This operation is already in the pipeline.
-      LDBG() << "  (OK) already inside pipeline";
-      continue;
-    }
-    if (!llvm::all_of(op->getUsers(), is_in_pipeline)) {
-      // This operation is already in the pipeline.
-      LDBG() << "  (FAIL) has users outside of pipeline";
-      continue;
-    }
-    auto maybe_placement = placement(op);
-    StageOp stage;
-    if (!maybe_placement) {
-      // The caller does not want this op to become part of the pipeline.
-      LDBG() << "  (FAIL) filtered by caller";
-      continue;
-    }
-    if (failed(insertImpl(op, *maybe_placement))) {
-      // We were unable to insert this op, due to a failure to forward its
-      // results to its consumers.
-      continue;
-    }
-
-    // Consider all the inserted ops producers for insertion into the pipeline.
-    const auto split = work_list.size();
-    for (auto needs : op->getOperands()) {
-      if (const auto wants = dyn_cast<OpResult>(needs); wants) {
-        work_list.push_back(wants.getOwner());
-      }
-    }
-    // We need to ensure that dependencies between the producers do not prevent
-    // them from being inserted into the pipeline. We can prevent this from
-    // happending by visiting the producers in reverse dominance order.
-    dominanceSort(MutableArrayRef(work_list.data() + split, work_list.end()),
-                  dominance);
-  }
-}
-
-auto PipelineBuilder::finalize() -> PipelineOp {
-  privatizer_.finalize();
-  return privatizer_.getPipeline();
 }
 
 namespace {
@@ -348,44 +213,41 @@ enum class ForwardingResult {
   Skip = 3,
 };
 
-[[nodiscard]] auto checkResult(const PipelineBuilder& builder,
-                               StageOp placement, OpResult result)
-    -> ForwardingResult {
-  if (placement) {
-    auto status = ForwardingResult::Skip;
+[[nodiscard]] auto checkResult(PipelineBuilder& builder, StageOp stage,
+                               OpResult result) -> ForwardingResult {
+  auto status = ForwardingResult::Skip;
 
-    for (auto* const user : result.getUsers()) {
-      auto consumer_stage = user->getParentOfType<StageOp>();
-      assert(consumer_stage);
-      if (consumer_stage == placement) {
-        // This results stays within the placement stage, so doesn't need to
-        // be forwarded.
-        continue;
-      }
-
-      if (builder.hasDependency(consumer_stage, placement)) {
-        // Forwarding this result would create a cyclic dependency.
-        LDBG() << "  (WARN) detected dependency cycle between";
-        LDBG() << "    " << OpWithFlags(consumer_stage, kSkipRegions);
-        LDBG() << "    " << OpWithFlags(placement, kSkipRegions);
-
-        // We can break this cycle by creating a new stage. This stage will
-        // copy the units of the old stage, and take its place in the map.
-        status = ForwardingResult::SplitAndForward;
-        break;
-      }
-
-      status = ForwardingResult::Forward;
+  for (auto* const user : result.getUsers()) {
+    auto consumer_stage = user->getParentOfType<StageOp>();
+    assert(consumer_stage);
+    if (consumer_stage == stage) {
+      // This results stays within the placement stage, so doesn't need to
+      // be forwarded.
+      continue;
     }
 
-    if (status == ForwardingResult::Skip) {
-      // We don't have to forward this result.
-      return ForwardingResult::Skip;
+    if (builder.hasDependency(consumer_stage, stage)) {
+      // Forwarding this result would create a cyclic dependency.
+      LDBG() << "  (WARN) detected dependency cycle between";
+      LDBG() << "    consumer: " << OpWithFlags(consumer_stage, kSkipRegions);
+      LDBG() << "    producer: " << OpWithFlags(stage, kSkipRegions);
+
+      // We can break this cycle by creating a new stage. This stage will
+      // copy the units of the old stage, and take its place in the map.
+      status = ForwardingResult::SplitAndForward;
+      break;
     }
+
+    status = ForwardingResult::Forward;
+  }
+
+  if (status == ForwardingResult::Skip) {
+    // We don't have to forward this result.
+    return ForwardingResult::Skip;
   }
 
   if (!mlir::ktdf::PipelineBuilder::isForwardable(result.getType())) {
-    LDBG() << "  (FAIL) result #" << result.getResultNumber()
+    LDBG() << "  (FAILED) result #" << result.getResultNumber()
            << " can't be forwarded";
     return ForwardingResult::Failure;
   }
@@ -393,8 +255,8 @@ enum class ForwardingResult {
   return ForwardingResult::Forward;
 };
 
-[[nodiscard]] auto checkResults(const PipelineBuilder& builder,
-                                StageOp placement, Operation* op,
+[[nodiscard]] auto checkResults(PipelineBuilder& builder, StageOp placement,
+                                Operation* op,
                                 SmallVectorImpl<OpResult>& forward)
     -> ForwardingResult {
   auto status = ForwardingResult::Forward;
@@ -419,17 +281,25 @@ enum class ForwardingResult {
 
 }  // namespace
 
-auto PipelineBuilder::insertImpl(Operation* op, Placement placement)
-    -> LogicalResult {
-  // Evaluate the placement without mutating the IR. We might not be able to
-  // insert the op, in which case we don't want to create a stage.
-  StageOp stage;
-  if (auto unit_or_units = dyn_cast_if_present<Attribute>(placement);
-      unit_or_units) {
-    stage = getStage(unit_or_units);
-  } else if (!placement.isNull()) {
-    stage = llvm::cast<StageOp>(placement);
-    assert(stage->getParentOp() == privatizer_.getPipeline());
+auto PipelineBuilder::insert(Operation* op, StageOp stage) -> LogicalResult {
+  assert(stage);
+
+  LDBG() << "trying to insert";
+  LDBG() << "    op: " << OpWithFlags(op, kSkipRegions);
+  LDBG() << "  into: " << OpWithFlags(stage);
+
+  const auto is_in_pipeline = [&](Operation* op) -> bool {
+    return getPipeline()->isAncestor(op) || isPrivate(op);
+  };
+  if (is_in_pipeline(op)) {
+    // This operation is already in the pipeline.
+    LDBG() << "  (FAILED) already inside pipeline";
+    return failure();
+  }
+  if (!llvm::all_of(op->getUsers(), is_in_pipeline)) {
+    // This operation is already in the pipeline.
+    LDBG() << "  (FAILED) has users outside of pipeline";
+    return failure();
   }
 
   // Determine all the results that we will have to forward, checking for
@@ -439,49 +309,190 @@ auto PipelineBuilder::insertImpl(Operation* op, Placement placement)
     case ForwardingResult::Failure:
       return failure();
     case ForwardingResult::Forward:
-      // If we don't have a stage yet, it's time to create one.
-      if (!stage) {
-        if (auto unit_or_units = dyn_cast_if_present<Attribute>(placement);
-            unit_or_units) {
-          stage = getOrCreateStage(unit_or_units);
-        } else {
-          stage = createStage();
-        }
-      }
       break;
-    case ForwardingResult::SplitAndForward:
+    case ForwardingResult::SplitAndForward: {
       // We can insert the op, but we have to break a dependency cycle. We can
       // do this by creating a new stage from the desired placement.
-      assert(stage);
-      stage =
-          createStage(stage.getApplicableUnitsAttr(), nullptr, stage.getLoc());
+      stage = createStage(stage.getApplicableUnitsAttr(), {}, stage.getLoc());
       break;
+    }
     case ForwardingResult::Skip:
       llvm_unreachable("unexpected ForwardingResult");
   }
 
   // This op can safely be moved into the pipeline.
-  assert(stage);
   {
-    OpBuilder::InsertionGuard guard(rewriter_);
-    setReadInsertionPoint(rewriter_, stage);
+    InsertionGuard guard(*this);
+    setInsertPointToRead(stage);
     op->remove();
-    rewriter_.insert(op);
+    OpBuilder::insert(op);
   }
 
   // Forward all results of this operation to their in-pipeline users.
   for (auto result : forward) {
     for (auto& use : result.getUses()) {
       auto stage = use.getOwner()->getParentOfType<StageOp>();
-      assert(stage);
+      assert(stage && "user outside of pipeline");
       auto forwarded = forwardToConsumer(result, stage);
-      assert(forwarded);
+      assert(forwarded && "result can't be forwarded");
       use.set(forwarded);
     }
   }
 
-  LDBG() << "  (OK) inserted";
+  LDBG() << "  (SUCCESS) inserted";
   return success();
+}
+
+auto PipelineBuilder::insert(Operation* op, Placement placement)
+    -> LogicalResult {
+  assert(placement);
+
+  if (succeeded(insert(op, placement.stage))) {
+    return success();
+  }
+
+  if (placement.erase_on_failure) {
+    eraseOp(placement.stage);
+  }
+
+  return failure();
+}
+
+namespace {
+
+void dominanceSort(MutableArrayRef<Operation*> op, DominanceInfo& dominance) {
+  llvm::stable_sort(op, [&](Operation* lhs, Operation* rhs) -> bool {
+    // NOTE: This code will not work for graph regions, and there is no simple
+    //       way to fix that. However, that's not an intended usage scenario.
+    return dominance.properlyDominates(lhs, rhs);
+  });
+}
+
+}  // namespace
+
+void PipelineBuilder::insert(ArrayRef<Operation*> ops, PlacementFn placement_fn,
+                             DominanceInfo& dominance) {
+  // Initialize the work list in reverse order, since we're popping from the
+  // back and want to keep the order (to preserve SSA property).
+  llvm::SmallVector<Operation*> work_list(ops.rbegin(), ops.rend());
+  while (!work_list.empty()) {
+    auto* const op = work_list.pop_back_val();
+    const auto placement = placement_fn(*this, op);
+    if (!placement || failed(insert(op, placement))) {
+      continue;
+    }
+
+    // Consider all the inserted ops producers for insertion into the pipeline.
+    const auto split = work_list.size();
+    for (auto needs : op->getOperands()) {
+      if (const auto wants = dyn_cast<OpResult>(needs); wants) {
+        work_list.push_back(wants.getOwner());
+      }
+    }
+    // We need to ensure that dependencies between the producers do not prevent
+    // them from being inserted into the pipeline. We can prevent this from
+    // happening by visiting the producers in reverse dominance order.
+    dominanceSort(MutableArrayRef(work_list.data() + split, work_list.end()),
+                  dominance);
+  }
+}
+
+auto PipelineBuilder::finalize() -> PipelineOp {
+  // Erase all the empty stages back to front (to erase forwarding chains).
+  if (!getPipeline().getBody()->empty()) {
+    auto* it = &getPipeline().getBody()->back();
+    do {
+      auto stage = dyn_cast<StageOp>(it);
+      it = it->getPrevNode();
+      if (stage && stage.getBody()->empty() && stage.getDependsOut().empty()) {
+        erase(stage);
+      }
+    } while (it != nullptr);
+  }
+
+  return PipelinePrivatizer::finalize();
+}
+
+PipelineBuilder::PipelineBuilder(PipelineOp pipeline,
+                                 OpBuilder::Listener* listener)
+    : PipelinePrivatizer(pipeline, false, listener) {
+  setInsertionPointToStart(getPipeline().getBody());
+}
+
+void PipelineBuilder::setInsertPointToWrite(StageOp stage) {
+  auto& body = *stage.getBody();
+  if (body.empty()) {
+    setInsertionPointToStart(&body);
+    return;
+  }
+
+  auto it = std::prev(body.end());
+  while (it != body.begin() && isa<WriteToFifoOp>(&*it)) {
+    --it;
+  }
+  setInsertionPointAfter(&*it);
+}
+
+void PipelineBuilder::setInsertPointToRead(StageOp stage) {
+  auto& body = *stage.getBody();
+  auto it = body.begin();
+  while (it != body.end() && isa<ReadFromFifoOp>(&*it)) {
+    ++it;
+  }
+  setInsertionPoint(&body, it);
+}
+
+namespace {
+
+[[nodiscard]] auto getSingleUser(mlir::Value value) -> mlir::Operation* {
+  const auto users = value.getUsers();
+  if (users.empty() || std::next(users.begin()) != users.end()) {
+    return nullptr;
+  }
+  return *users.begin();
+}
+
+template <class OpType>
+[[nodiscard]] auto getSingleUserOfType(mlir::Value value) -> OpType {
+  return dyn_cast_if_present<OpType>(getSingleUser(value));
+}
+
+}  // namespace
+
+void PipelineBuilder::erase(StageOp stage) {
+  // Erase the insertion point mapping.
+  // TODO: Figure out a new one?
+  if (const auto it = units_to_stage_.find(stage.getApplicableUnitsAttr());
+      it != units_to_stage_.end() && it->second == stage) {
+    units_to_stage_.erase(it);
+  }
+
+  // Erase the dependency information.
+  // TODO: Remove the token from all the consumers, potentially making it dead.
+  tokens_.erase(stage);
+  dependencies_.erase(stage);
+
+  // Erase the FIFO reads we know about in this stage.
+  const auto erase_fifo = [&](ReadFromFifoOp read) {
+    read->dropAllReferences();
+    if (auto write = getSingleUserOfType<WriteToFifoOp>(read.getFifoSlot());
+        write) {
+      eraseOp(write);
+    }
+    eraseOp(read);
+  };
+  for (auto&& [source, reads] : fifos_) {
+    llvm::erase_if(reads, [&](ReadFromFifoOp read) -> bool {
+      if (read->getParentOp() == stage) {
+        erase_fifo(read);
+        return true;
+      }
+
+      return false;
+    });
+  }
+
+  eraseOp(stage);
 }
 
 //===----------------------------------------------------------------------===//
@@ -523,15 +534,7 @@ auto mlir::ktdf::unrollVia(RewriterBase& rewriter, ViaOp via) -> LogicalResult {
 
 auto mlir::ktdf::eliminateVia(RewriterBase& rewriter, ViaOp via)
     -> LogicalResult {
-  const auto users = via->getUsers();
-  if (users.empty()) {
-    rewriter.eraseOp(via);
-    return success();
-  }
-  if (std::next(users.begin()) != users.end()) {
-    return failure();
-  }
-  auto write = dyn_cast<WriteToFifoOp>(*users.begin());
+  auto write = getSingleUserOfType<WriteToFifoOp>(via);
   auto read = via.getOperand().getDefiningOp<ReadFromFifoOp>();
   if (!read->hasOneUse() || !write || !read) {
     return failure();

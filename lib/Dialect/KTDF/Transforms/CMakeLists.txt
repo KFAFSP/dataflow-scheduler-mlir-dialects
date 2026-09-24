@@ -11,4 +11,5 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFTransforms
 
   LINK_LIBS
     DataflowSchedulerDialectsKTDFDialect
+    DataflowSchedulerDialectsKTDFAnalysis
 )

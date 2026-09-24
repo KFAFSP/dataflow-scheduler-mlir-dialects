@@ -62,14 +62,14 @@ void inlineUnlinkedBlock(RewriterBase& rewriter, Block& source, Block& dest,
 
 }  // namespace
 
-PipelinePrivatizer::PipelinePrivatizer(RewriterBase& rewriter,
-                                       PipelineOp pipeline, bool force_recreate)
-    : rewriter_(rewriter),
+PipelinePrivatizer::PipelinePrivatizer(PipelineOp pipeline, bool force_recreate,
+                                       OpBuilder::Listener* listener)
+    : RewriterBase(pipeline->getContext(), listener),
       pipeline_(pipeline),
       existing_(pipeline.getPrivateOp()) {
   if (force_recreate && existing_) {
     // Erase the existing PrivateOp.
-    erasePrivateOp(rewriter_, existing_, private_);
+    erasePrivateOp(*this, existing_, private_);
     existing_ = nullptr;
   }
 }
@@ -138,33 +138,32 @@ auto PipelinePrivatizer::makePrivate(Operation* op) -> LogicalResult {
   return success();
 }
 
-auto PipelinePrivatizer::createToken(std::optional<Location> loc)
-    -> TypedValue<TokenType> {
-  OpBuilder::InsertionGuard guard(rewriter_);
-  rewriter_.setInsertionPointToEnd(&private_);
-  return CreateTokenOp::create(rewriter_, loc.value_or(pipeline_.getLoc()));
+auto PipelinePrivatizer::createToken(std::optional<Location> loc) -> Token {
+  InsertionGuard guard(*this);
+  setInsertionPointToEnd(&private_);
+  return CreateTokenOp::create(*this, loc.value_or(pipeline_.getLoc()));
 }
 
 auto PipelinePrivatizer::createFifo(ArrayRef<FifoSlotType> slots,
                                     ValueRange dynamic_sizes,
                                     std::optional<Location> loc) -> ValueRange {
-  OpBuilder::InsertionGuard guard(rewriter_);
-  rewriter_.setInsertionPointToEnd(&private_);
-  return FifoAllocateOp::create(rewriter_, loc.value_or(pipeline_.getLoc()),
+  InsertionGuard guard(*this);
+  setInsertionPointToEnd(&private_);
+  return FifoAllocateOp::create(*this, loc.value_or(pipeline_.getLoc()),
                                 ArrayRef<Type>(slots.data(), slots.size()),
                                 dynamic_sizes)
       .getResults();
 }
 
-void PipelinePrivatizer::finalize() {
+auto PipelinePrivatizer::finalize() -> PipelineOp {
   if (private_.empty()) {
     // Nothing was privated.
-    return;
+    return pipeline_;
   }
 
   // Erase the existing PrivateOp, if any.
   if (existing_) {
-    erasePrivateOp(rewriter_, existing_, private_);
+    erasePrivateOp(*this, existing_, private_);
   }
 
   // Collect the values that need to be yielded from the new PrivateOp.
@@ -179,13 +178,13 @@ void PipelinePrivatizer::finalize() {
   }
 
   // Create the new PrivateOp.
-  OpBuilder::InsertionGuard guard(rewriter_);
-  rewriter_.setInsertionPointToStart(pipeline_.getBody());
+  InsertionGuard guard(*this);
+  setInsertionPointToStart(pipeline_.getBody());
   existing_ = mlir::ktdf::PrivateOp::create(
-      rewriter_, pipeline_->getLoc(), TypeRange(yield_values),
+      *this, pipeline_->getLoc(), TypeRange(yield_values),
       [&](OpBuilder& builder, Location loc) {
         mlir::ktdf::PrivateYieldOp::create(builder, loc, yield_values);
-        inlineUnlinkedBlock(rewriter_, private_, *builder.getBlock(),
+        inlineUnlinkedBlock(*this, private_, *builder.getBlock(),
                             builder.getBlock()->begin());
       });
 
@@ -194,13 +193,13 @@ void PipelinePrivatizer::finalize() {
     return !existing_.getBodyRegion().isAncestor(
         use.getOwner()->getParentRegion());
   };
-  rewriter_.replaceUsesWithIf(yield_values, existing_->getResults(),
-                              is_outside_private);
+  replaceUsesWithIf(yield_values, existing_->getResults(), is_outside_private);
 
   // Erase all privated ops that are trivially dead.
   existing_->walk([&](Operation* op) {
     if (mlir::isOpTriviallyDead(op)) {
-      rewriter_.eraseOp(op);
+      eraseOp(op);
     }
   });
+  return pipeline_;
 }

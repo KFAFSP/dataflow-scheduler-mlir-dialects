@@ -64,15 +64,23 @@ namespace mlir::ktdf {
 /// Users may call `makePrivate` on operations to attempt making them private
 /// to the pipeline. The move is deferred until the helper is destroyed. The
 /// helper allows for both hoisting and sinking of ops into the PrivateOp.
-class PipelinePrivatizer {
+class PipelinePrivatizer : protected RewriterBase {
  public:
+  using Token = TypedValue<TokenType>;
+  using FifoSlot = TypedValue<FifoSlotType>;
+
   /// Canonicalizes the PrivateOp of @p op .
   ///
   /// - Results without users are dropped.
   /// - Values yielded multiple times are coalesced into one result.
   /// - External yielded values replace their results.
   /// - If the resulting PrivateOp is empty, it is erased.
-  static void canonicalize(RewriterBase& rewriter, PipelineOp op) {
+  static void canonicalize(PipelineOp op,
+                           OpBuilder::Listener* listener = nullptr) {
+    PipelinePrivatizer(op, true, listener);
+  }
+  /// @copydoc canonicalize(PipelineOp, OpBuilder::Listener*)
+  static void canonicalize(const RewriterBase& rewriter, PipelineOp op) {
     PipelinePrivatizer(rewriter, op, true);
   }
 
@@ -80,11 +88,15 @@ class PipelinePrivatizer {
   ///
   /// If @p force_recreate is `true`, any existing PrivateOp will be re-created
   /// in its canonical form, even if no modifications are made.
-  explicit PipelinePrivatizer(RewriterBase& rewriter, PipelineOp pipeline,
-                              bool force_recreate = false);
+  explicit PipelinePrivatizer(PipelineOp pipeline, bool force_recreate = false,
+                              OpBuilder::Listener* listener = nullptr);
+  /// @copydoc PipelinePrivatizer(PipelineOp, bool, OpBuilder::Listener*)
+  explicit PipelinePrivatizer(const OpBuilder& builder, PipelineOp pipeline,
+                              bool force_recreate = false)
+      : PipelinePrivatizer(pipeline, force_recreate, builder.getListener()) {}
 
   /// Finalizes the outstanding modifications to the pipeline.
-  ~PipelinePrivatizer() { finalize(); }
+  ~PipelinePrivatizer() override { finalize(); }
 
   PipelinePrivatizer(PipelinePrivatizer&&) = delete;
   PipelinePrivatizer(const PipelinePrivatizer&) = delete;
@@ -99,8 +111,12 @@ class PipelinePrivatizer {
     return isPrivate(op->getBlock());
   }
 
+  /// Gets the MLIRContext.
+  [[nodiscard]] auto getContext() const -> MLIRContext* {
+    return OpBuilder::getContext();
+  }
   /// Gets the underlying pipeline.
-  [[nodiscard]] auto getPipeline() -> PipelineOp { return pipeline_; }
+  [[nodiscard]] auto getPipeline() const -> PipelineOp { return pipeline_; }
 
   /// Attempts to make @p op a private result.
   ///
@@ -115,7 +131,7 @@ class PipelinePrivatizer {
 
   /// Creates a new token inside the private region.
   [[nodiscard]] auto createToken(std::optional<Location> loc = std::nullopt)
-      -> TypedValue<TokenType>;
+      -> Token;
   /// Creates a new FIFO inside the private region.
   [[nodiscard]] auto createFifo(ArrayRef<FifoSlotType> slots,
                                 ValueRange dynamic_sizes = {},
@@ -125,16 +141,15 @@ class PipelinePrivatizer {
   /// Finalizes the outstanding modifications to the pipeline.
   ///
   /// If there are no modifications to perform, does nothing. After finalizing,
-  /// the PipelinePrivatizer will be in the state as if it had been constructed
-  /// on the result, without any outstanding modifications.
-  void finalize();
+  /// the PipelinePrivatizer will be ready again to queue more modifications to
+  /// the same pipeline.
+  virtual auto finalize() -> PipelineOp;
 
  private:
-  RewriterBase& rewriter_;
   PipelineOp pipeline_;
   PrivateOp existing_;
 
-  /// Unlinked accumulator for operations to be privated on destruction.
+  /// Unlinked accumulator for operations to be privated on finalize().
   Block private_;
 };
 

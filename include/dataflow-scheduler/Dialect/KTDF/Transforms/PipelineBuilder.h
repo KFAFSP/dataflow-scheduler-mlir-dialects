@@ -20,9 +20,8 @@
 #define DATAFLOW_SCHEDULER_DIALECT_KTDF_TRANSFORMS_PIPELINEBUILDER_H_
 
 #include <llvm/ADT/PointerUnion.h>
-#include <llvm/Support/LogicalResult.h>
-#include <mlir/IR/PatternMatch.h>
 
+#include "dataflow-scheduler/Dialect/KTDF/Analysis/StageDependency.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
 
 namespace mlir {
@@ -35,29 +34,46 @@ class RewritePatternSet;
 namespace mlir::ktdf {
 
 /// Helper class for building `ktdf.pipeline` operations.
-class PipelineBuilder {
-  using Token = TypedValue<TokenType>;
-
+class PipelineBuilder : public PipelinePrivatizer {
  public:
   using BodyBuilderFn = function_ref<void(OpBuilder&, Location)>;
-  /// Indicates into which stage of a pipeline an op should be placed.
-  using Placement = llvm::PointerUnion<Attribute, StageOp>;
-  /// Function that decides the placement of @p op inside a pipeline.
-  ///
-  /// @retval nullopt   Do not put @p op in the pipeline.
-  /// @retval Attribute Put @p op in the stage for the given unit/units.
-  /// @retval Stage     Put @p op in this exact stage.
-  using PlacementFn = function_ref<std::optional<Placement>(Operation* op)>;
+
+  struct Placement {
+    /*implicit*/ Placement() = default;
+    /*implicit*/ Placement(std::nullptr_t) : Placement() {}
+    /*implicit*/ Placement(StageOp stage, bool erase_on_failure = false)
+        : stage(stage), erase_on_failure(erase_on_failure) {}
+
+    explicit operator bool() const { return stage != nullptr; }
+    /*implicit*/ operator StageOp() const { return stage; }
+
+    StageOp stage;
+    bool erase_on_failure;
+  };
+
+  using PlacementFn = function_ref<Placement(PipelineBuilder&, Operation*)>;
 
   /// Creates a `ktdf.pipeline` using @p builder and obtains a builder for it.
-  explicit PipelineBuilder(const OpBuilder& builder, Location loc);
+  explicit PipelineBuilder(OpBuilder& builder, Location loc)
+      : PipelineBuilder(PipelineOp::create(builder, loc),
+                        builder.getListener()) {}
+
+  ~PipelineBuilder() override { finalize(); }
+
+  /// Converts @p attr to a units array.
+  ///
+  /// If @p attr is an ArrayAttr or `nullptr`, forwards it. Otherwise, wraps
+  /// @p attr in an ArrayAttr and returns that.
+  [[nodiscard]] auto toUnits(Attribute attr) const -> ArrayAttr;
 
   /// Gets the stage for @p units , if it exists.
   [[nodiscard]] auto getStage(ArrayAttr units) const -> StageOp {
     return units_to_stage_.lookup(units);
   }
   /// Gets the stage for @p unit_or_units , if it exists.
-  [[nodiscard]] auto getStage(Attribute unit_or_units) const -> StageOp;
+  [[nodiscard]] auto getStage(Attribute unit_or_units) const -> StageOp {
+    return getStage(toUnits(unit_or_units));
+  }
 
   /// Creates a stage.
   ///
@@ -68,20 +84,20 @@ class PipelineBuilder {
                    std::optional<Location> loc = std::nullopt) -> StageOp;
 
   /// Gets or creates a stage for @p units .
-  auto getOrCreateStage(ArrayAttr units, BodyBuilderFn body_builder = nullptr,
+  auto getOrCreateStage(ArrayAttr units,
                         std::optional<Location> loc = std::nullopt) -> StageOp {
     auto stage = getStage(units);
-    return stage ? stage : createStage(units, body_builder, loc);
+    return stage ? stage : createStage(units, {}, loc);
   }
   /// Gets or creates a stage for @p unit_or_units .
   auto getOrCreateStage(Attribute unit_or_units,
-                        BodyBuilderFn body_builder = nullptr,
-                        std::optional<Location> loc = std::nullopt) -> StageOp;
+                        std::optional<Location> loc = std::nullopt) -> StageOp {
+    return getOrCreateStage(toUnits(unit_or_units), loc);
+  }
 
   /// Determines whether @p consumer (transitively) depends on @p producer .
-  [[nodiscard]] auto hasDependency(StageOp producer, StageOp consumer) const
-      -> bool {
-    return dependencies_.contains({producer, consumer});
+  [[nodiscard]] auto hasDependency(StageOp producer, StageOp consumer) -> bool {
+    return dependencies_.contains(consumer, producer, true);
   }
 
   /// Adds a dependency on @p producer to @p consumer .
@@ -113,29 +129,38 @@ class PipelineBuilder {
   ///
   /// If all users of @p op are in the same stage, this stage becomes the
   /// natural placement for @p op . Otherwise, the result is `nullopt`.
-  [[nodiscard]] static auto naturalPlacement(Operation* op)
-      -> std::optional<Placement>;
+  [[nodiscard]] static auto naturalPlacement(Operation* op) -> Placement;
 
+  auto insert(Operation* op, StageOp stage) -> LogicalResult;
+  auto insert(Operation* op, Placement placement) -> LogicalResult;
   /// Attempts to insert @p ops into the pipeline.
   ///
   /// Runs a work list algorithm that attempts to put @p ops and all their
-  /// transitive producers into the pipeline. Evalutes @p placement for each
+  /// transitive producers into the pipeline. Evalutes @p placement_fn for each
   /// eligible producer to determine the stage it should go to.
-  void insert(ArrayRef<Operation*> ops, PlacementFn placement,
+  void insert(ArrayRef<Operation*> ops, PlacementFn placement_fn,
               DominanceInfo& dominance);
 
-  /// Finalizes the pipeline, materializing the private region.
-  auto finalize() -> PipelineOp;
+  /// Finalizes the outstanding modifications to the pipeline.
+  ///
+  /// If there are no modifications to perform, does nothing. After finalizing,
+  /// the PipelineBuilder will be ready again to queue more modifications to
+  /// the same pipeline.
+  auto finalize() -> PipelineOp override;
 
- private:
-  auto insertImpl(Operation* op, Placement placement) -> LogicalResult;
+ protected:
+  explicit PipelineBuilder(PipelineOp pipeline,
+                           OpBuilder::Listener* listener = nullptr);
 
-  IRRewriter rewriter_;
-  PipelinePrivatizer privatizer_;
+  void setInsertPointToWrite(StageOp stage);
+  void setInsertPointToRead(StageOp stage);
+
+  virtual void erase(StageOp stage);
+
   DenseMap<ArrayAttr, StageOp> units_to_stage_;
   DenseMap<StageOp, Token> tokens_;
   DenseMap<OpResult, SmallVector<ReadFromFifoOp>> fifos_;
-  DenseSet<std::pair<StageOp, StageOp>> dependencies_;
+  StageDependency dependencies_;
 };
 
 /// Unrolls @p via into individual hops if needed.
