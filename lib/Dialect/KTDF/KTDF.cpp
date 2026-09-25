@@ -74,9 +74,9 @@ PipelinePrivatizer::PipelinePrivatizer(PipelineOp pipeline, bool force_recreate,
   }
 }
 
-auto PipelinePrivatizer::isPrivate(Block* block) -> bool {
+auto PipelinePrivatizer::isPrivate(Block* block) const -> bool {
   while (block) {
-    if (existing_ && existing_.getBody() == block) {
+    if (existing_ && PrivateOp(existing_).getBody() == block) {
       return true;
     }
 

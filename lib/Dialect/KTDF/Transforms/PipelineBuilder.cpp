@@ -29,10 +29,12 @@
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/Dominance.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
 #include "dataflow-scheduler/Dialect/KTDF/Analysis/StageDependency.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
+#include "dataflow-scheduler/Dialect/KTDF/KTDFTypes.h"
 
 #define DEBUG_TYPE "ktdf-pipeline-builder"
 
@@ -53,6 +55,57 @@ auto PipelineBuilder::toUnits(Attribute attr) const -> ArrayAttr {
 
   return units;
 }
+
+//===----------------------------------------------------------------------===//
+// PipelineBuilder::Allocator
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+[[nodiscard]] auto getUnitOrUnits(StageOp stage) -> Attribute {
+  const auto units = stage.getApplicableUnitsAttr();
+  if (!units) {
+    return ArrayAttr::get(stage->getContext(), {});
+  }
+
+  return units.size() == 1 ? units.getValue().front() : units;
+}
+
+}  // namespace
+
+auto PipelineBuilder::Allocator::getDefault() -> Allocator& {
+  static Allocator instance;
+  return instance;
+}
+
+auto PipelineBuilder::Allocator::canAllocate(OpResult producer) const -> bool {
+  const auto value_type = dyn_cast<ShapedType>(producer.getType());
+  return value_type && !isa<MemRefType>(value_type) &&
+         value_type.hasStaticShape();
+}
+
+auto PipelineBuilder::Allocator::allocate(PipelineBuilder& builder,
+                                          OpResult producer, StageOp consumer)
+    -> TypedValue<FifoSlotType> {
+  const auto value_type = cast<ShapedType>(producer.getType());
+
+  // We can't just read from an existing FIFO slot, we'll have to make a copy
+  // of the value at the producer's location and plumb a new FIFO.
+  const auto producer_unit =
+      getUnitOrUnits(producer.getOwner()->getParentOfType<StageOp>());
+  const auto consumer_unit = getUnitOrUnits(consumer);
+
+  // Create the appropriate type for the slot, which flattens the elements.
+  const auto slot_type = FifoSlotType::get(
+      builder.getContext(), producer_unit, consumer_unit,
+      value_type.getNumElements(), value_type.getElementType());
+  return cast<TypedValue<FifoSlotType>>(
+      builder.createFifo({slot_type}, {}, consumer->getLoc()).front());
+}
+
+//===----------------------------------------------------------------------===//
+// PipelineBuilder
+//===----------------------------------------------------------------------===//
 
 auto PipelineBuilder::createStage(ArrayAttr units, BodyBuilderFn body_builder,
                                   std::optional<Location> loc) -> StageOp {
@@ -100,60 +153,29 @@ auto PipelineBuilder::addDependency(Operation* producer, Operation* consumer)
   return addDependency(producer_stage, consumer_stage);
 }
 
-namespace {
-
-[[nodiscard]] auto getUnitOrUnits(StageOp stage) -> Attribute {
-  const auto units = stage.getApplicableUnitsAttr();
-  if (!units) {
-    return ArrayAttr::get(stage->getContext(), {});
-  }
-
-  return units.size() == 1 ? units.getValue().front() : units;
+auto PipelineBuilder::isAvailable(OpResult producer, StageOp consumer) const
+    -> bool {
+  return producer.getParentRegion()->isAncestor(consumer->getParentRegion()) ||
+         this->isPrivate(producer.getOwner());
 }
 
-}  // namespace
-
-auto PipelineBuilder::isForwardable(Type type) -> bool {
-  const auto shaped = dyn_cast<ShapedType>(type);
-  return shaped && isForwardable(shaped);
+auto PipelineBuilder::canForward(OpResult producer) const -> bool {
+  auto stage = producer.getOwner()->getParentOfType<StageOp>();
+  return stage && stage->getParentOp() == getPipeline() &&
+         allocator_->canAllocate(producer);
 }
 
-auto PipelineBuilder::isForwardable(ShapedType type) -> bool {
-  return !isa<MemRefType>(type) && type.hasStaticShape();
-}
-
-auto PipelineBuilder::forwardToConsumer(Value value, StageOp consumer)
-    -> Value {
-  if (value.getParentRegion()->isAncestor(consumer->getParentRegion())) {
+auto PipelineBuilder::forward(OpResult producer, StageOp consumer) -> Value {
+  if (isAvailable(producer, consumer)) {
     // The consumer already has access to the value, either because the producer
-    // is within the consumer stage or because it is outside the pipeline.
-    return value;
+    // is in the consumer stage, the private segment, or outside the pipeline.
+    return producer;
   }
 
-  auto producer = dyn_cast<OpResult>(value);
-  if (!producer) {
-    // The value isn't produced by an operation, which means we can't make it
-    // available to the consumer.
-    return nullptr;
-  }
-  if (isPrivate(producer.getOwner())) {
-    // The producer is going to be private, we don't have to do anything.
-    return value;
-  }
-  const auto value_type = dyn_cast<ShapedType>(value.getType());
-  if (!isForwardable(value_type)) {
-    // We're unable to forward this value.
-    // FIXME: To handle memref types, the memory allocation would have to be
-    //        promoted to private memory, and the result copied.
-    // FIXME: To handle dynamically-sized slots, the dimensions must be computed
-    //        in front of the pipeline (or the private section).
-    return nullptr;
-  }
+  assert(canForward(producer));
+
   auto producer_stage = producer.getOwner()->getParentOfType<StageOp>();
-  if (!producer_stage || producer_stage->getParentOp() != getPipeline()) {
-    // We're not in charge of this producer and can't forward its value.
-    return nullptr;
-  }
+  assert(producer_stage && producer_stage->getParentOp() == getPipeline());
 
   // Lookup existing FIFO reads that produce this value.
   auto& reads = fifos_[producer];
@@ -163,16 +185,9 @@ auto PipelineBuilder::forwardToConsumer(Value value, StageOp consumer)
     }
   }
 
-  // We can't just read from an existing FIFO slot, we'll have to make a copy
-  // of the value at the producer's location and plumb a new FIFO.
-  const auto producer_unit = getUnitOrUnits(producer_stage);
-  const auto consumer_unit = getUnitOrUnits(consumer);
-
-  // Create the appropriate type for the slot, which flattens the elements.
-  const auto slot_type = FifoSlotType::get(
-      getContext(), producer_unit, consumer_unit, value_type.getNumElements(),
-      value_type.getElementType());
-  const auto slot = createFifo({slot_type}, {}, consumer->getLoc()).front();
+  // Allocate a new FIFO slot for this value.
+  const auto slot = allocator_->allocate(*this, producer, consumer);
+  assert(slot && "allocator may not fail");
 
   // On the producer side, create a new write to the slot.
   InsertionGuard guard(*this);
@@ -181,8 +196,8 @@ auto PipelineBuilder::forwardToConsumer(Value value, StageOp consumer)
 
   // On the consumer side, create a new read from the slot.
   setInsertPointToRead(consumer);
-  auto read =
-      ReadFromFifoOp::create(*this, consumer->getLoc(), value.getType(), slot);
+  auto read = ReadFromFifoOp::create(*this, consumer->getLoc(),
+                                     producer.getType(), slot);
   reads.push_back(read);
 
   // Introduce a dependency between producer and consumer via private tokens.
@@ -246,7 +261,7 @@ enum class ForwardingResult {
     return ForwardingResult::Skip;
   }
 
-  if (!mlir::ktdf::PipelineBuilder::isForwardable(result.getType())) {
+  if (!builder.getAllocator().canAllocate(result)) {
     LDBG() << "  (FAILED) result #" << result.getResultNumber()
            << " can't be forwarded";
     return ForwardingResult::Failure;
@@ -304,8 +319,8 @@ auto PipelineBuilder::insert(Operation* op, StageOp stage) -> LogicalResult {
 
   // Determine all the results that we will have to forward, checking for
   // dependency cycles in the process.
-  SmallVector<OpResult> forward;
-  switch (checkResults(*this, stage, op, forward)) {
+  SmallVector<OpResult> results_to_forward;
+  switch (checkResults(*this, stage, op, results_to_forward)) {
     case ForwardingResult::Failure:
       return failure();
     case ForwardingResult::Forward:
@@ -329,12 +344,11 @@ auto PipelineBuilder::insert(Operation* op, StageOp stage) -> LogicalResult {
   }
 
   // Forward all results of this operation to their in-pipeline users.
-  for (auto result : forward) {
+  for (auto result : results_to_forward) {
     for (auto& use : result.getUses()) {
       auto stage = use.getOwner()->getParentOfType<StageOp>();
       assert(stage && "user outside of pipeline");
-      auto forwarded = forwardToConsumer(result, stage);
-      assert(forwarded && "result can't be forwarded");
+      auto forwarded = forward(result, stage);
       use.set(forwarded);
     }
   }
@@ -415,9 +429,10 @@ auto PipelineBuilder::finalize() -> PipelineOp {
   return PipelinePrivatizer::finalize();
 }
 
-PipelineBuilder::PipelineBuilder(PipelineOp pipeline,
+PipelineBuilder::PipelineBuilder(PipelineOp pipeline, Allocator* allocator,
                                  OpBuilder::Listener* listener)
-    : PipelinePrivatizer(pipeline, false, listener) {
+    : PipelinePrivatizer(pipeline, false, listener),
+      allocator_(allocator != nullptr ? allocator : &Allocator::getDefault()) {
   setInsertionPointToStart(getPipeline().getBody());
 }
 

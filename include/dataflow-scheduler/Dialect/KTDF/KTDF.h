@@ -105,9 +105,9 @@ class PipelinePrivatizer : protected RewriterBase {
   auto operator=(const PipelinePrivatizer&) = delete;
 
   /// Determines whether @p block will be within the PrivateOp.
-  [[nodiscard]] auto isPrivate(Block* block) -> bool;
+  [[nodiscard]] auto isPrivate(Block* block) const -> bool;
   /// Determines whether @p op will be within the PrivateOp.
-  [[nodiscard]] auto isPrivate(Operation* op) -> bool {
+  [[nodiscard]] auto isPrivate(Operation* op) const -> bool {
     return isPrivate(op->getBlock());
   }
 

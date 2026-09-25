@@ -23,6 +23,7 @@
 
 #include "dataflow-scheduler/Dialect/KTDF/Analysis/StageDependency.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
+#include "dataflow-scheduler/Dialect/KTDF/KTDFTypes.h"
 
 namespace mlir {
 
@@ -38,13 +39,40 @@ class PipelineBuilder : public PipelinePrivatizer {
  public:
   using BodyBuilderFn = function_ref<void(OpBuilder&, Location)>;
 
+  /// Controls the allocation of FIFO slots.
+  struct Allocator {
+    /// Gets the default allocator.
+    [[nodiscard]] static auto getDefault() -> Allocator&;
+
+    virtual ~Allocator() = default;
+
+    /// Determines whether a slot can be allocated for @p producer .
+    [[nodiscard]] virtual auto canAllocate(OpResult producer) const -> bool;
+    /// Allocates a slot for @p producer .
+    ///
+    /// This method may not fail when `canAllocate` previously returned `true`
+    /// for the given @p producer .
+    [[nodiscard]] virtual auto allocate(PipelineBuilder& builder,
+                                        OpResult producer, StageOp consumer)
+        -> TypedValue<FifoSlotType>;
+  };
+
+  /// Determines where an operation should be placed in the pipeline.
   struct Placement {
+    /// Initializes a not-into-pipleine placement.
     /*implicit*/ Placement() = default;
+    /// @copydoc Placement()
     /*implicit*/ Placement(std::nullptr_t) : Placement() {}
+    /// Initializes a Placement into @p stage .
+    ///
+    /// If @p erase_on_failure is set, the PipelineBuilder will erase the
+    /// stage if the placement fails.
     /*implicit*/ Placement(StageOp stage, bool erase_on_failure = false)
         : stage(stage), erase_on_failure(erase_on_failure) {}
 
+    /// Gets whether the operation should be placed in the pipeline.
     explicit operator bool() const { return stage != nullptr; }
+    /// Gets the stage the operation should be placed in.
     /*implicit*/ operator StageOp() const { return stage; }
 
     StageOp stage;
@@ -54,8 +82,9 @@ class PipelineBuilder : public PipelinePrivatizer {
   using PlacementFn = function_ref<Placement(PipelineBuilder&, Operation*)>;
 
   /// Creates a `ktdf.pipeline` using @p builder and obtains a builder for it.
-  explicit PipelineBuilder(OpBuilder& builder, Location loc)
-      : PipelineBuilder(PipelineOp::create(builder, loc),
+  explicit PipelineBuilder(OpBuilder& builder, Location loc,
+                           Allocator* allocator = nullptr)
+      : PipelineBuilder(PipelineOp::create(builder, loc), allocator,
                         builder.getListener()) {}
 
   ~PipelineBuilder() override { finalize(); }
@@ -109,21 +138,26 @@ class PipelineBuilder : public PipelinePrivatizer {
   /// @return Whether a new dependency was added.
   auto addDependency(Operation* producer, Operation* consumer) -> bool;
 
-  /// Determines whether @p type can be forwarded between stages.
-  [[nodiscard]] static auto isForwardable(Type type) -> bool;
-  /// Determines whether @p type can be forwarded between stages.
-  [[nodiscard]] static auto isForwardable(ShapedType type) -> bool;
+  /// Get the underlying FIFO allocator.
+  [[nodiscard]] auto getAllocator() const -> Allocator& { return *allocator_; }
 
-  /// Attempts to forward @p value to @p consumer .
+  /// Determines whether @p producer is available in @p consumer .
+  [[nodiscard]] auto isAvailable(OpResult producer, StageOp consumer) const
+      -> bool;
+  /// Determines whether @p producer can be forwarded between stages.
+  [[nodiscard]] auto canForward(OpResult producer) const -> bool;
+
+  /// Forwards @p producer to @p consumer .
   ///
-  /// If @p value is already accessible in @p consumer , it (or its last read)
-  /// is returned. Otherwise, if it can be forwarded, a FIFO is created to
+  /// If @p producer is already accessible in @p consumer , it (or its last
+  /// read) is returned. Otherwise, if it can be forwarded, a FIFO is created to
   /// transport the value from its producer stage to the consumer stage, and
   /// the read is returned.
   ///
-  /// @retval Value   Value of @p value in @p consumer .
-  /// @retval nullptr @p value can not be forwarded to @p consumer .
-  [[nodiscard]] auto forwardToConsumer(Value value, StageOp consumer) -> Value;
+  /// @pre    `isAvailable(producer, consumer) || isForwardable(value)`
+  ///
+  /// @retval Value   Value of @p producer in @p consumer .
+  [[nodiscard]] auto forward(OpResult producer, StageOp consumer) -> Value;
 
   /// Computes the natural placement for @p op .
   ///
@@ -149,7 +183,7 @@ class PipelineBuilder : public PipelinePrivatizer {
   auto finalize() -> PipelineOp override;
 
  protected:
-  explicit PipelineBuilder(PipelineOp pipeline,
+  explicit PipelineBuilder(PipelineOp pipeline, Allocator* allocator = nullptr,
                            OpBuilder::Listener* listener = nullptr);
 
   void setInsertPointToWrite(StageOp stage);
@@ -159,6 +193,7 @@ class PipelineBuilder : public PipelinePrivatizer {
 
   DenseMap<ArrayAttr, StageOp> units_to_stage_;
   DenseMap<StageOp, Token> tokens_;
+  Allocator* allocator_;
   DenseMap<OpResult, SmallVector<ReadFromFifoOp>> fifos_;
   StageDependency dependencies_;
 };
