@@ -21,6 +21,8 @@
 
 #include <llvm/ADT/PointerUnion.h>
 
+#include <optional>
+
 #include "dataflow-scheduler/Dialect/KTDF/Analysis/StageDependency.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDFTypes.h"
@@ -122,6 +124,26 @@ class PipelineBuilder : public PipelinePrivatizer {
   auto getOrCreateStage(Attribute unit_or_units,
                         std::optional<Location> loc = std::nullopt) -> StageOp {
     return getOrCreateStage(toUnits(unit_or_units), loc);
+  }
+
+  /// Returns a Placement that will be `erased_on_failure`.
+  auto tryPlacement(std::optional<Location> loc = std::nullopt) -> Placement {
+    return {createStage({}, {}, loc), true};
+  }
+  /// Returns a Placement for @p units that will be `erased_on_failure` if it
+  /// was created.
+  auto tryPlacement(ArrayAttr units, std::optional<Location> loc = std::nullopt)
+      -> Placement {
+    if (auto stage = getStage(units); stage) {
+      return {stage, false};
+    }
+    return {createStage(units, {}, loc), true};
+  }
+  /// Returns a Placement for @p unit_or_units that will be `erased_on_failure`
+  /// if it was created.
+  auto tryPlacement(Attribute unit_or_units,
+                    std::optional<Location> loc = std::nullopt) -> Placement {
+    return tryPlacement(toUnits(unit_or_units), loc);
   }
 
   /// Determines whether @p consumer (transitively) depends on @p producer .
