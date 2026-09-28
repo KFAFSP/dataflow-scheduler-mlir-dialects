@@ -37,7 +37,7 @@ class RewritePatternSet;
 namespace mlir::ktdf {
 
 /// Helper class for building `ktdf.pipeline` operations.
-class PipelineBuilder : public PipelinePrivatizer {
+class PipelineBuilder : public ImplicitLocOpBuilder {
  public:
   using BodyBuilderFn = function_ref<void(OpBuilder&, Location)>;
 
@@ -78,7 +78,7 @@ class PipelineBuilder : public PipelinePrivatizer {
     /*implicit*/ operator StageOp() const { return stage; }
 
     StageOp stage;
-    bool erase_on_failure;
+    bool erase_on_failure = false;
   };
 
   using PlacementFn = function_ref<Placement(PipelineBuilder&, Operation*)>;
@@ -89,13 +89,44 @@ class PipelineBuilder : public PipelinePrivatizer {
       : PipelineBuilder(PipelineOp::create(builder, loc), allocator,
                         builder.getListener()) {}
 
-  ~PipelineBuilder() override { finalize(); }
+  virtual ~PipelineBuilder() { build(); }
+
+  PipelineBuilder(PipelineBuilder&&) = delete;
+  PipelineBuilder(const PipelineBuilder&) = delete;
+  auto operator=(PipelineBuilder&&) = delete;
+  auto operator=(const PipelineBuilder&) = delete;
+
+  //===--------------------------------------------------------------------===//
+  // Builder interface
+  //===--------------------------------------------------------------------===//
+
+  void setInsertionPoint() = delete;
+  void setInsertionPointAfter() = delete;
+  void setInsertionPointToStart() = delete;
+  void setInsertionPointToEnd() = delete;
+  void setInsertionPointAfterValue() = delete;
+  void clearInsertionPoint() = delete;
+  void restoreInsertionPoint() = delete;
 
   /// Converts @p attr to a units array.
   ///
   /// If @p attr is an ArrayAttr or `nullptr`, forwards it. Otherwise, wraps
   /// @p attr in an ArrayAttr and returns that.
-  [[nodiscard]] auto toUnits(Attribute attr) const -> ArrayAttr;
+  [[nodiscard]] auto getUnits(Attribute attr) const -> ArrayAttr;
+
+  /// Gets the underlying PrivateBuilder.
+  [[nodiscard]] auto getPrivateBuilder() -> PrivateBuilder& {
+    return private_builder_;
+  }
+
+  /// Gets an OpBuilder to insert reads into @p stage .
+  [[nodiscard]] auto getReadBuilder(StageOp stage) -> OpBuilder;
+  /// Gets an OpBuilder to insert writes into @p stage .
+  [[nodiscard]] auto getWriteBuilder(StageOp stage) -> OpBuilder;
+
+  //===--------------------------------------------------------------------===//
+  //
+  //===--------------------------------------------------------------------===//
 
   /// Gets the stage for @p units , if it exists.
   [[nodiscard]] auto getStage(ArrayAttr units) const -> StageOp {
@@ -103,7 +134,7 @@ class PipelineBuilder : public PipelinePrivatizer {
   }
   /// Gets the stage for @p unit_or_units , if it exists.
   [[nodiscard]] auto getStage(Attribute unit_or_units) const -> StageOp {
-    return getStage(toUnits(unit_or_units));
+    return getStage(getUnits(unit_or_units));
   }
 
   /// Creates a stage.
@@ -123,7 +154,7 @@ class PipelineBuilder : public PipelinePrivatizer {
   /// Gets or creates a stage for @p unit_or_units .
   auto getOrCreateStage(Attribute unit_or_units,
                         std::optional<Location> loc = std::nullopt) -> StageOp {
-    return getOrCreateStage(toUnits(unit_or_units), loc);
+    return getOrCreateStage(getUnits(unit_or_units), loc);
   }
 
   /// Returns a Placement that will be `erased_on_failure`.
@@ -143,7 +174,7 @@ class PipelineBuilder : public PipelinePrivatizer {
   /// if it was created.
   auto tryPlacement(Attribute unit_or_units,
                     std::optional<Location> loc = std::nullopt) -> Placement {
-    return tryPlacement(toUnits(unit_or_units), loc);
+    return tryPlacement(getUnits(unit_or_units), loc);
   }
 
   /// Determines whether @p consumer (transitively) depends on @p producer .
@@ -154,20 +185,20 @@ class PipelineBuilder : public PipelinePrivatizer {
   /// Adds a dependency on @p producer to @p consumer .
   ///
   /// @return Whether a new dependency was added.
-  auto addDependency(StageOp producer, StageOp consumer) -> bool;
+  virtual auto addDependency(StageOp producer, StageOp consumer) -> bool;
   /// Adds a dependency between the stages of @p producer and @p consumer.
   ///
   /// @return Whether a new dependency was added.
   auto addDependency(Operation* producer, Operation* consumer) -> bool;
 
-  /// Get the underlying FIFO allocator.
+  /// Gets the underlying FIFO allocator.
   [[nodiscard]] auto getAllocator() const -> Allocator& { return *allocator_; }
 
   /// Determines whether @p producer is available in @p consumer .
   [[nodiscard]] auto isAvailable(OpResult producer, StageOp consumer) const
       -> bool;
   /// Determines whether @p producer can be forwarded between stages.
-  [[nodiscard]] auto canForward(OpResult producer) const -> bool;
+  [[nodiscard]] virtual auto canForward(OpResult producer) const -> bool;
 
   /// Forwards @p producer to @p consumer .
   ///
@@ -179,7 +210,8 @@ class PipelineBuilder : public PipelinePrivatizer {
   /// @pre    `isAvailable(producer, consumer) || isForwardable(value)`
   ///
   /// @retval Value   Value of @p producer in @p consumer .
-  [[nodiscard]] auto forward(OpResult producer, StageOp consumer) -> Value;
+  [[nodiscard]] virtual auto forward(OpResult producer, StageOp consumer)
+      -> Value;
 
   /// Computes the natural placement for @p op .
   ///
@@ -187,8 +219,8 @@ class PipelineBuilder : public PipelinePrivatizer {
   /// natural placement for @p op . Otherwise, the result is `nullopt`.
   [[nodiscard]] static auto naturalPlacement(Operation* op) -> Placement;
 
-  auto insert(Operation* op, StageOp stage) -> LogicalResult;
-  auto insert(Operation* op, Placement placement) -> LogicalResult;
+  /// Attempts to insert @p op into @p placement .
+  virtual auto insert(Operation* op, Placement placement) -> LogicalResult;
   /// Attempts to insert @p ops into the pipeline.
   ///
   /// Runs a work list algorithm that attempts to put @p ops and all their
@@ -202,17 +234,15 @@ class PipelineBuilder : public PipelinePrivatizer {
   /// If there are no modifications to perform, does nothing. After finalizing,
   /// the PipelineBuilder will be ready again to queue more modifications to
   /// the same pipeline.
-  auto finalize() -> PipelineOp override;
+  auto build() -> PipelineOp;
 
  protected:
   explicit PipelineBuilder(PipelineOp pipeline, Allocator* allocator = nullptr,
                            OpBuilder::Listener* listener = nullptr);
 
-  void setInsertPointToWrite(StageOp stage);
-  void setInsertPointToRead(StageOp stage);
-
   virtual void erase(StageOp stage);
 
+  PrivateBuilder private_builder_;
   DenseMap<ArrayAttr, StageOp> units_to_stage_;
   DenseMap<StageOp, Token> tokens_;
   Allocator* allocator_;

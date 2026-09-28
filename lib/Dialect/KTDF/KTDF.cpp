@@ -18,7 +18,13 @@
 
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
 
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/LogicalResult.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <optional>
 
@@ -28,178 +34,150 @@ using namespace mlir;
 using namespace mlir::ktdf;
 
 //===----------------------------------------------------------------------===//
-// PipelinePrivatizer
+// PrivateBuilder
 //===----------------------------------------------------------------------===//
 
-namespace {
-
-void erasePrivateOp(RewriterBase& rewriter, PrivateOp op, Block& result) {
-  auto yield = op.getYieldOp();
-
-  // Redirect all results to the yielded values for now.
-  // NOTE: This might temporarily break the SSA property, which we fix later.
-  rewriter.replaceAllOpUsesWith(op, yield->getOperands());
-
-  // Inline the body of the old PrivateOp into the new body and erase it.
-  rewriter.eraseOp(yield);
-  // NOTE: We don't use the rewriter here, we notfify once during destroy.
-  result.getOperations().splice(result.begin(), op.getBody()->getOperations());
-  rewriter.eraseOp(op);
+PrivateBuilder::PrivateBuilder(PrivateOp existing,
+                               OpBuilder::Listener* listener)
+    : ImplicitLocOpBuilder(existing.getLoc(), existing.getContext(), listener) {
+  OpBuilder::setInsertionPoint(existing.getBody()->getTerminator());
 }
 
-void inlineUnlinkedBlock(RewriterBase& rewriter, Block& source, Block& dest,
-                         Block::iterator at) {
-  if (auto* listener = rewriter.getListener(); listener) {
-    while (!source.empty()) {
-      rewriter.moveOpBefore(&source.front(), &dest, at);
-    }
-
-    return;
+PrivateBuilder::PrivateBuilder(PipelineOp pipeline, std::optional<Location> loc,
+                               OpBuilder::Listener* listener)
+    : ImplicitLocOpBuilder(loc.value_or(pipeline.getLoc()),
+                           pipeline->getContext(), listener) {
+  auto existing = pipeline.getPrivateOp();
+  if (!existing) {
+    OpBuilder::setInsertionPointToStart(pipeline.getBody());
+    existing =
+        PrivateOp::create(*this, {}, [](OpBuilder& builder, Location loc) {
+          PrivateYieldOp::create(builder, loc);
+        });
   }
 
-  dest.getOperations().splice(at, source.getOperations());
+  OpBuilder::setInsertionPoint(existing.getBody()->getTerminator());
 }
 
-}  // namespace
+auto PrivateBuilder::canPrivate(Operation* op) const -> bool {
+  auto private_op = cast<PrivateOp>(getInsertionBlock()->getParentOp());
+  auto* const scope = private_op->getParentRegion();
 
-PipelinePrivatizer::PipelinePrivatizer(PipelineOp pipeline, bool force_recreate,
-                                       OpBuilder::Listener* listener)
-    : RewriterBase(pipeline->getContext(), listener),
-      pipeline_(pipeline),
-      existing_(pipeline.getPrivateOp()) {
-  if (force_recreate && existing_) {
-    // Erase the existing PrivateOp.
-    erasePrivateOp(*this, existing_, private_);
-    existing_ = nullptr;
-  }
-}
-
-auto PipelinePrivatizer::isPrivate(Block* block) const -> bool {
-  while (block) {
-    if (existing_ && PrivateOp(existing_).getBody() == block) {
+  // Determine if all users of op can see the results of the PrivateOp.
+  const auto sees_results = [&](Operation* user) -> bool {
+    if (user->getParentRegion() == scope) {
       return true;
     }
-
-    auto* const parent = block->getParentOp();
-    if (!parent) {
-      break;
+    for (user = user->getParentOp(); user; user = user->getParentOp()) {
+      if (user->mightHaveTrait<OpTrait::IsIsolatedFromAbove>()) {
+        return false;
+      }
+      if (user->getParentRegion() == scope) {
+        return true;
+      }
     }
 
-    block = parent->getBlock();
+    return false;
+  };
+  if (!llvm::all_of(op->getUsers(), sees_results)) {
+    return false;
   }
 
-  return block == &private_;
-}
-
-auto PipelinePrivatizer::makePrivate(Operation* op) -> LogicalResult {
-  if (isPrivate(op)) {
-    // Op is already private.
-    return success();
-  }
-
-  if (pipeline_->isProperAncestor(op)) {
-    // Scan the parents of op to determine if it can be hoisted.
-    for (auto* parent = op->getParentOp(); parent != pipeline_;
-         parent = parent->getParentOp()) {
-      if (parent->mightHaveTrait<OpTrait::IsIsolatedFromAbove>()) {
-        // Can't hoist op out of this parent.
-        return failure();
-      }
-    }
-
-    // Scan the operands of op to determine if it can be hoisted.
-    for (auto opd : op->getOperands()) {
-      if (isPrivate(opd.getParentBlock())) {
-        // Source is already private, operands are fixed on destruction.
-        continue;
-      }
-      if (auto parent = op->getParentRegion();
-          parent && parent->isProperAncestor(&pipeline_.getBodyRegion())) {
-        // Source is outside of the pipeline, so it can be hoisted.
-        continue;
-      }
-
-      return failure();
-    }
-  } else {
-    // Scan the results of op to determine if it can be sunk.
-    const auto is_outside_pipeline = [&](Operation* user) -> bool {
-      return !pipeline_->isProperAncestor(user);
+  // Determine if all (transitive) uses in op are available in the PrivateOp.
+  const auto check_available = op->walk([&](Operation* op) -> WalkResult {
+    const auto is_available = [&](Value value) {
+      return value.getParentRegion()->isAncestor(&private_op.getBodyRegion());
     };
-    if (llvm::any_of(op->getUsers(), is_outside_pipeline)) {
-      // Can't sink into the pipeline.
-      return failure();
+    if (!llvm::all_of(op->getOperands(), is_available)) {
+      return WalkResult::interrupt();
     }
-  }
-
-  // Move it to the end of the new private body.
-  // NOTE: We don't use the rewriter here, we notify once during destroy.
-  op->moveBefore(&private_, private_.end());
-  return success();
+    if (op->hasTrait<OpTrait::IsIsolatedFromAbove>()) {
+      return WalkResult::skip();
+    }
+    return WalkResult::advance();
+  });
+  return !check_available.wasInterrupted();
 }
 
-auto PipelinePrivatizer::createToken(std::optional<Location> loc) -> Token {
-  InsertionGuard guard(*this);
-  setInsertionPointToEnd(&private_);
-  return CreateTokenOp::create(*this, loc.value_or(pipeline_.getLoc()));
+void PrivateBuilder::makePrivate(Operation* op) {
+  assert(canPrivate(op));
+
+  const InsertPoint from(op->getBlock(), Block::iterator(op));
+  op->moveBefore(getInsertionBlock(), getInsertionPoint());
+  getListener()->notifyOperationInserted(op, from);
 }
 
-auto PipelinePrivatizer::createFifo(ArrayRef<FifoSlotType> slots,
-                                    ValueRange dynamic_sizes,
-                                    std::optional<Location> loc) -> ValueRange {
-  InsertionGuard guard(*this);
-  setInsertionPointToEnd(&private_);
-  return FifoAllocateOp::create(*this, loc.value_or(pipeline_.getLoc()),
+auto PrivateBuilder::createToken(std::optional<Location> loc) -> Token {
+  return CreateTokenOp::create(*this, loc.value_or(getLoc()));
+}
+
+auto PrivateBuilder::createFifo(ArrayRef<FifoSlotType> slots,
+                                ValueRange dynamic_sizes,
+                                std::optional<Location> loc) -> ValueRange {
+  return FifoAllocateOp::create(*this, loc.value_or(getLoc()),
                                 ArrayRef<Type>(slots.data(), slots.size()),
                                 dynamic_sizes)
       .getResults();
 }
 
-auto PipelinePrivatizer::finalize() -> PipelineOp {
-  if (private_.empty()) {
-    // Nothing was privated.
-    return pipeline_;
-  }
+auto PrivateBuilder::build() -> PrivateOp {
+  IRRewriter rewriter(*this);
+  auto* block = getInsertionBlock();
 
-  // Erase the existing PrivateOp, if any.
-  if (existing_) {
-    erasePrivateOp(*this, existing_, private_);
+  // Redirect all yielded results back to their definitions, since we might
+  // need to re-create the PrivateOp.
+  auto yield = cast<PrivateYieldOp>(block->getTerminator());
+  for (auto result : block->getParentOp()->getOpResults()) {
+    rewriter.replaceAllUsesWith(result,
+                                yield.getOperand(result.getResultNumber()));
   }
 
   // Collect the values that need to be yielded from the new PrivateOp.
   // This will re-discover the old results, since we redirected them.
   SmallVector<Value> yield_values;
-  const auto should_yield = [&](Value value) -> bool {
-    return value.isUsedOutsideOfBlock(&private_);
-  };
-  for (auto& op : private_) {
-    llvm::append_range(yield_values,
-                       llvm::make_filter_range(op.getResults(), should_yield));
+  for (auto& op : llvm::make_early_inc_range(llvm::reverse(*block))) {
+    if (mlir::isOpTriviallyDead(&op)) {
+      rewriter.eraseOp(&op);
+      continue;
+    }
+
+    const auto should_yield = [&](Value value) -> bool {
+      return value.isUsedOutsideOfBlock(block);
+    };
+    llvm::append_range(
+        yield_values,
+        llvm::make_filter_range(llvm::reverse(op.getResults()), should_yield));
+  }
+  std::reverse(yield_values.begin(), yield_values.end());
+
+  auto result = cast<PrivateOp>(block->getParentOp());
+
+  // Determine if we need to re-create the PrivateOp.
+  const TypeRange yield_types(yield_values);
+  if (result->getResultTypes() != yield_types) {
+    // Insert a new PrivateOp just before the existing one.
+    rewriter.setInsertionPoint(result);
+    auto old_op = std::exchange(
+        result, PrivateOp::create(rewriter, result.getLoc(), yield_types));
+
+    // Copy over the attributes and move the body.
+    result->setDiscardableAttrs(old_op->getRawDictionaryAttrs());
+    rewriter.inlineBlockBefore(block, result.getBody(),
+                               result.getBody()->end());
+    block = result.getBody();
+
+    // The terminator was moved, and the old op must now be deleted.
+    OpBuilder::setInsertionPoint(yield);
+    rewriter.eraseOp(old_op);
   }
 
-  // Create the new PrivateOp.
-  InsertionGuard guard(*this);
-  setInsertionPointToStart(pipeline_.getBody());
-  existing_ = mlir::ktdf::PrivateOp::create(
-      *this, pipeline_->getLoc(), TypeRange(yield_values),
-      [&](OpBuilder& builder, Location loc) {
-        mlir::ktdf::PrivateYieldOp::create(builder, loc, yield_values);
-        inlineUnlinkedBlock(*this, private_, *builder.getBlock(),
-                            builder.getBlock()->begin());
-      });
-
-  // Redirect all uses of the private values outside of the PrivateOp.
+  // Update the terminator and redirect pipeline uses of private values.
+  rewriter.modifyOpInPlace(yield, [&]() { yield->setOperands(yield_values); });
   const auto is_outside_private = [&](OpOperand& use) -> bool {
-    return !existing_.getBodyRegion().isAncestor(
+    return !result.getBodyRegion().isAncestor(
         use.getOwner()->getParentRegion());
   };
-  replaceUsesWithIf(yield_values, existing_->getResults(), is_outside_private);
-
-  // Erase all privated ops that are trivially dead.
-  existing_->walk([&](Operation* op) {
-    if (mlir::isOpTriviallyDead(op)) {
-      eraseOp(op);
-    }
-  });
-  return pipeline_;
+  rewriter.replaceUsesWithIf(yield_values, result.getResults(),
+                             is_outside_private);
+  return result;
 }

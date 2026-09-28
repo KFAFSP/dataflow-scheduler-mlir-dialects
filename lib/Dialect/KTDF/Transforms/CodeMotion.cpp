@@ -82,7 +82,7 @@ auto mlir::ktdf::hoistPipelineContents(
   // Visit the stages first.
   {
     IRRewriter rewriter(pipeline);
-    PipelinePrivatizer privatizer(rewriter, pipeline);
+    PrivateBuilder privatizer(rewriter, pipeline);
 
     for (auto stage : pipeline.getStages()) {
       for (auto& op : llvm::make_early_inc_range(stage.getOps())) {
@@ -100,7 +100,7 @@ auto mlir::ktdf::hoistPipelineContents(
             break;
           case PipelineAnchor::Private:
             // If possible, make the op private.
-            if (succeeded(privatizer.makePrivate(&op))) {
+            if (succeeded(privatizer.tryMakePrivate(&op))) {
               ++result;
             }
             break;

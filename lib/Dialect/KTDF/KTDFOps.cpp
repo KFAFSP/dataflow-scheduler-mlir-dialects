@@ -492,7 +492,7 @@ struct CanonicalizePrivateResults : OpRewritePattern<PrivateOp> {
       return failure();
     }
 
-    PipelinePrivatizer::canonicalize(rewriter, op.getParentOp());
+    PrivateBuilder::canonicalize(rewriter, op);
     return success();
   }
 
