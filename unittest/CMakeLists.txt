@@ -1,3 +1,5 @@
+add_subdirectory(Exemplar)
+
 enable_testing()
 include(CTest)
 
@@ -25,6 +27,7 @@ add_executable(dataflow-scheduler-dialects-tests
 target_link_libraries(dataflow-scheduler-dialects-tests
   doctest::doctest
   DataflowSchedulerDialects::KTDFArchAnalysis
+  dataflow-scheduler-dialects-tests-exemplar
 )
 target_include_directories(dataflow-scheduler-dialects-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
@@ -32,6 +35,7 @@ target_include_directories(dataflow-scheduler-dialects-tests PRIVATE
 target_compile_definitions(dataflow-scheduler-dialects-tests PRIVATE
   "INPUTS_DIR=\"${PROJECT_SOURCE_DIR}/test/Inputs/\""
 )
+set(LLVM_REQUIRES_EH ON)
 llvm_update_compile_flags(dataflow-scheduler-dialects-tests)
 if(MLIR_LINK_MLIR_DYLIB)
   target_link_libraries(dataflow-scheduler-dialects-tests
