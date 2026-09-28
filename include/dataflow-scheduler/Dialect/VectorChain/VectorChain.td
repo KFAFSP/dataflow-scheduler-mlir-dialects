@@ -184,6 +184,31 @@ def VectorChain_MergeOp:VectorChain_Op<"merge",
     }];
 }
 
+def VectorChain_SelectDynamicOp:VectorChain_Op<"select_dynamic",
+  [NoMemoryEffect, IsolatedFromAbove]> {
+    let summary = "Dynamically select elements from a vector using a sparse index vector";
+    let description = [{
+    Selects a subset of elements from `$op1` (a dense value vector) based on
+    the indices encoded in `$op2` (a sparse index vector). The result is a
+    compacted vector whose length equals the number of selected elements.
+
+    Example:
+    ```mlir
+    // Select 256 elements from a 1024-element activation vector guided by
+    // 256 two-bit sparse indices.
+    %selected = vectorchain.select_dynamic %activation, %ker_idx
+        : vector<1024xi8>, vector<256xi2>, vector<256xi8>
+    ```
+    }];
+
+    let arguments = (ins AnyVectorOfAnyRank:$op1, AnyVectorOfAnyRank:$op2);
+
+    let results = (outs AnyVectorOfAnyRank:$data);
+    let assemblyFormat = [{
+          $op1 `,` $op2    attr-dict `:` type($op1) `,` type($op2) `,` type(results)
+    }];
+}
+
 def VectorChain_CreateAffineMaskOp:VectorChain_Op<"create_affine_mask",
   [NoMemoryEffect, IsolatedFromAbove]> {
     let summary = "Create affine mask operation";
