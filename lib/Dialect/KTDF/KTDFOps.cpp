@@ -22,6 +22,7 @@
 
 // clang-format off
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
+#include "dataflow-scheduler/Dialect/KTDF/KTDFTypes.h"
 // clang-format on
 
 #include <llvm/ADT/STLExtras.h>
@@ -32,6 +33,7 @@
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
 using namespace mlir;
@@ -437,6 +439,28 @@ auto StageOp::addInDependency(TypedValue<TokenType> token) -> bool {
   return true;
 }
 
+auto StageOp::removeInDependency(Value token) -> bool {
+  for (auto& dep : getDependsInMutable()) {
+    if (dep.get() == token) {
+      auto& segments = getProperties().operandSegmentSizes;
+      (*this)->eraseOperands(dep.getOperandNumber(), 1);
+      --segments[0];
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void StageOp::setDependsIn(ValueRange tokens) {
+  assert(llvm::all_of(tokens.getTypes(),
+                      [](Type type) { return isa<TokenType>(type); }));
+
+  auto& segments = getProperties().operandSegmentSizes;
+  (*this)->setOperands(0, segments[0], tokens);
+  segments[0] = tokens.size();
+}
+
 auto StageOp::isOutDependency(OpOperand& operand) -> bool {
   assert(operand.getOwner() == *this);
   return operand.getOperandNumber() >=
@@ -451,6 +475,28 @@ auto StageOp::addOutDependency(TypedValue<TokenType> token) -> bool {
   auto& segments = getProperties().operandSegmentSizes;
   (*this)->insertOperands(segments[0] + segments[1]++, {token});
   return true;
+}
+
+auto StageOp::removeOutDependency(Value token) -> bool {
+  for (auto& dep : getDependsOutMutable()) {
+    if (dep.get() == token) {
+      auto& segments = getProperties().operandSegmentSizes;
+      (*this)->eraseOperands(dep.getOperandNumber(), 1);
+      --segments[1];
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void StageOp::setDependsOut(ValueRange tokens) {
+  assert(llvm::all_of(tokens.getTypes(),
+                      [](Type type) { return isa<TokenType>(type); }));
+
+  auto& segments = getProperties().operandSegmentSizes;
+  (*this)->setOperands(segments[0], segments[1], tokens);
+  segments[1] = tokens.size();
 }
 
 //===----------------------------------------------------------------------===//

@@ -572,6 +572,14 @@ def KTDF_StageOp : KTDF_Op<"stage", [
     /// @return Whether a new operand was added.
     auto addInDependency(TypedValue<TokenType> token) -> bool;
 
+    /// Modifies the op in-place to remove an input dependency token.
+    ///
+    /// @return Wheter an operand was removed.
+    auto removeInDependency(Value token) -> bool;
+
+    /// Updates all input dependencies.
+    void setDependsIn(ValueRange tokens);
+
     /// Determines whether this stage has an out dependency on @p operand .
     [[nodiscard]] auto isOutDependency(OpOperand& operand) -> bool;
 
@@ -579,6 +587,14 @@ def KTDF_StageOp : KTDF_Op<"stage", [
     ///
     /// @return Whether a new operand was added.
     auto addOutDependency(TypedValue<TokenType> token) -> bool;
+
+    /// Modifies the op in-place to remove an output dependency token.
+    ///
+    /// @return Wheter an operand was removed.
+    auto removeOutDependency(Value token) -> bool;
+
+    /// Updates all output dependencies.
+    void setDependsOut(ValueRange tokens);
   }];
 }
 
