@@ -141,6 +141,8 @@ class PipelineBuilder : protected ImplicitLocOpBuilder {
   [[nodiscard]] auto getPrivateBuilder() -> PrivateBuilder& {
     return private_builder_;
   }
+  /// Gets a builder for contained stages.
+  [[nodiscard]] auto getStageBuilder() -> ImplicitLocOpBuilder { return *this; }
   /// Gets an OpBuilder to insert reads into @p stage .
   [[nodiscard]] auto getReadBuilder(StageOp stage) -> OpBuilder;
   /// Gets an OpBuilder to insert writes into @p stage .

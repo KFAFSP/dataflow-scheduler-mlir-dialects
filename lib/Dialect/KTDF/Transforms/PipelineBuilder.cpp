@@ -133,18 +133,20 @@ auto PipelineBuilder::getUnits(Attribute attr) const -> ArrayAttr {
 
 auto PipelineBuilder::getReadBuilder(StageOp stage) -> OpBuilder {
   auto& body = *stage.getBody();
-  auto it = body.begin();
-  while (it != body.end() && isa<ReadFromFifoOp>(&*it)) {
-    ++it;
-  }
-
-  return OpBuilder(stage.getBody(), it, listener);
+  return OpBuilder(&body, body.begin(), listener);
 }
 
 auto PipelineBuilder::getWriteBuilder(StageOp stage) -> OpBuilder {
   auto& body = *stage.getBody();
+  if (body.empty()) {
+    return OpBuilder(&body, body.end(), listener);
+  }
 
-  return OpBuilder(stage.getBody(), body.end(), listener);
+  auto it = body.end();
+  while (it != body.begin() && llvm::isa<WriteToFifoOp>(&*std::prev(it))) {
+    --it;
+  }
+  return OpBuilder(&body, it, listener);
 }
 
 auto PipelineBuilder::build() -> PipelineOp {
@@ -179,16 +181,17 @@ auto PipelineBuilder::getStage(Operation* op) const -> StageOp {
 
 auto PipelineBuilder::createStage(ArrayAttr units, std::optional<Location> loc,
                                   StageBuilderFn body_builder) -> StageOp {
+  // Insert stages after the PrivateOp, so that producer fusion neatly orders
+  // the stages in topological order.
+  OpBuilder::InsertionGuard guard(*this);
+  setInsertionPointAfter(private_builder_.getInsertionPoint()->getParentOp());
+
   auto result =
       StageOp::create(*this, loc.value_or(getLoc()), {}, {}, body_builder);
   if (units) {
     result.setApplicableUnitsAttr(units);
     units_to_stage_[units] = result;
   }
-
-  // Continue inserting _before_ the stage, which neatly orders the stages when
-  // we're inserting producers.
-  OpBuilder::setInsertionPoint(result);
   return result;
 }
 
@@ -486,7 +489,7 @@ void PipelineBuilder::insert(ArrayRef<Operation*> ops, PlacementFn placement_fn,
 
 PipelineBuilder::PipelineBuilder(PipelineOp pipeline, Allocator* allocator,
                                  OpBuilder::Listener* listener)
-    : ImplicitLocOpBuilder(pipeline.getLoc(), pipeline.getContext()),
+    : ImplicitLocOpBuilder(pipeline.getLoc(), pipeline.getContext(), listener),
       private_builder_(pipeline, std::nullopt, listener),
       allocator_(allocator != nullptr ? allocator : &Allocator::getDefault()) {
   OpBuilder::setInsertionPointToEnd(pipeline.getBody());
