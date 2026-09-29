@@ -66,12 +66,11 @@ using FifoSlot = TypedValue<FifoSlotType>;
 ///
 /// Users may call `tryMakePrivate` on ops to attempt making them private. The
 /// updating of the PrivateOp is deffered until the `build()` method is called
-/// or the helper is destroyed. The resulting PrivateOp, if any, will be in
-/// canonicalized form.
+/// or the helper is destroyed. The resulting PrivateOp is in canonical form.
 ///
-/// Private operations may be inserted simply by using the ImplicitLocOpBuilder
-/// base class. However, manually setting the insertion position leads to
-/// undefined behavior!
+/// Alternatively, private operations may be inserted by using this instance
+/// as the builder argument to `create`. Changing the insertion block, however,
+/// leads to undefined behavior.
 class PrivateBuilder : public ImplicitLocOpBuilder {
  public:
   /// Canonicalizes @p op .
@@ -95,18 +94,18 @@ class PrivateBuilder : public ImplicitLocOpBuilder {
     }
   }
 
-  /// Initializes a PrivateBuilder for @p existing .
+  /// Initializes a builder for @p existing .
   explicit PrivateBuilder(PrivateOp existing,
                           OpBuilder::Listener* listener = nullptr);
-  /// Initializes a PrivateBuilder for @p pipeline .
+  /// Initializes a builder for @p pipeline , inserting a PrivateOp if needed.
   explicit PrivateBuilder(PipelineOp pipeline,
                           std::optional<Location> loc = std::nullopt,
                           OpBuilder::Listener* listener = nullptr);
-  /// Initializes a PrivateBuilder for @p pipeline .
+  /// Initializes a builder for @p pipeline , inserting a PrivateOp if needed.
   explicit PrivateBuilder(const OpBuilder& builder, PipelineOp pipeline,
                           std::optional<Location> loc = std::nullopt)
       : PrivateBuilder(pipeline, loc, builder.getListener()) {}
-  /// Initializes a PrivateBuilder for @p pipeline .
+  /// Initializes a builder for @p pipeline , inserting a PrivateOp if needed.
   explicit PrivateBuilder(const ImplicitLocOpBuilder& builder,
                           PipelineOp pipeline)
       : PrivateBuilder(pipeline, builder.getLoc(), builder.getListener()) {}
@@ -119,6 +118,7 @@ class PrivateBuilder : public ImplicitLocOpBuilder {
   auto operator=(PrivateBuilder&&) = delete;
   auto operator=(const PrivateBuilder&) = delete;
 
+  // Changing the insertion block leads to undefined behavior.
   void setInsertionPoint() = delete;
   void setInsertionPointAfter() = delete;
   void setInsertionPointToStart() = delete;

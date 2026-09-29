@@ -68,11 +68,12 @@ auto PrivateBuilder::canPrivate(Operation* op) const -> bool {
     if (user->getParentRegion() == scope) {
       return true;
     }
-    for (user = user->getParentOp(); user; user = user->getParentOp()) {
-      if (user->mightHaveTrait<OpTrait::IsIsolatedFromAbove>()) {
+    for (auto* parent = user->getParentOp(); parent;
+         parent = user->getParentOp()) {
+      if (parent->mightHaveTrait<OpTrait::IsIsolatedFromAbove>()) {
         return false;
       }
-      if (user->getParentRegion() == scope) {
+      if (parent == private_op || parent->getParentRegion() == scope) {
         return true;
       }
     }

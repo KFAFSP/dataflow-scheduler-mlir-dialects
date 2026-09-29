@@ -85,29 +85,30 @@ void StageDependency::getConsumers(StageOp producer,
 
 auto StageDependency::contains(StageOp consumer, StageOp producer,
                                bool transitive) -> bool {
-  const auto get = [&](StageOp stage) -> const SmallPtrSetImpl<StageOp>& {
-    const auto [it, invalid] = cache_.try_emplace(consumer);
+  const auto get_or_cache =
+      [&](StageOp stage) -> const SmallPtrSetImpl<StageOp>& {
+    const auto [it, invalid] = cache_.try_emplace(stage);
     if (invalid) {
-      getProducers(consumer, it->second);
+      getProducers(stage, it->second);
     }
 
     return it->second;
   };
 
   if (!transitive) {
-    return get(consumer).contains(producer);
+    return get_or_cache(consumer).contains(producer);
   }
 
   SmallVector<StageOp> work_list{consumer};
   SmallPtrSet<StageOp, 16> seen{consumer};
   while (!work_list.empty()) {
     const auto consumer = work_list.pop_back_val();
-    for (auto transitive : get(consumer)) {
-      if (transitive == producer) {
+    for (auto depends : get_or_cache(consumer)) {
+      if (depends == producer) {
         return true;
       }
-      if (seen.insert(transitive).second) {
-        work_list.push_back(transitive);
+      if (seen.insert(depends).second) {
+        work_list.push_back(depends);
       }
     }
   }

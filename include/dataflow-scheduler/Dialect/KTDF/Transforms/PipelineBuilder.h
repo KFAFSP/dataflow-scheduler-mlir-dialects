@@ -20,31 +20,39 @@
 #define DATAFLOW_SCHEDULER_DIALECT_KTDF_TRANSFORMS_PIPELINEBUILDER_H_
 
 #include <llvm/ADT/PointerUnion.h>
+#include <llvm/ADT/iterator_range.h>
+#include <mlir/IR/Builders.h>
 
 #include <optional>
 
 #include "dataflow-scheduler/Dialect/KTDF/Analysis/StageDependency.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
-#include "dataflow-scheduler/Dialect/KTDF/KTDFTypes.h"
 
 namespace mlir {
 
 class DominanceInfo;
-class RewritePatternSet;
 
 }  // namespace mlir
 
 namespace mlir::ktdf {
 
-/// Helper class for building `ktdf.pipeline` operations.
-class PipelineBuilder : public ImplicitLocOpBuilder {
+/// RAII helper that allows moving code to a PipelineOp.
+///
+/// Users may call `insert` on ops to attempt moving them into the pipeline.
+/// Some updating of the PipelineOp is deffered until the `build()` method is
+/// called or the helper is destroyed.
+class PipelineBuilder : protected ImplicitLocOpBuilder {
  public:
-  using BodyBuilderFn = function_ref<void(OpBuilder&, Location)>;
-
   /// Controls the allocation of FIFO slots.
   struct Allocator {
     /// Gets the default allocator.
     [[nodiscard]] static auto getDefault() -> Allocator&;
+
+    /*implicit*/ Allocator() = default;
+    /*implicit*/ Allocator(Allocator&&) = default;
+    /*implicit*/ Allocator(const Allocator&) = default;
+    auto operator=(Allocator&&) -> Allocator& = default;
+    auto operator=(const Allocator&) -> Allocator& = default;
 
     virtual ~Allocator() = default;
 
@@ -56,11 +64,17 @@ class PipelineBuilder : public ImplicitLocOpBuilder {
     /// for the given @p producer .
     [[nodiscard]] virtual auto allocate(PipelineBuilder& builder,
                                         OpResult producer, StageOp consumer)
-        -> TypedValue<FifoSlotType>;
+        -> FifoSlot;
   };
 
   /// Determines where an operation should be placed in the pipeline.
   struct Placement {
+    /// Computes the natural placement for @p op .
+    ///
+    /// If all users of @p op are in the same stage, this stage becomes the
+    /// natural placement for @p op . Otherwise, the result is `nullptr`.
+    [[nodiscard]] static auto natural(Operation* op) -> Placement;
+
     /// Initializes a not-into-pipleine placement.
     /*implicit*/ Placement() = default;
     /// @copydoc Placement()
@@ -69,26 +83,35 @@ class PipelineBuilder : public ImplicitLocOpBuilder {
     ///
     /// If @p erase_on_failure is set, the PipelineBuilder will erase the
     /// stage if the placement fails.
+    ///
+    /// @pre  `!erase_on_failure || stage.getBody()->empty()`
     /*implicit*/ Placement(StageOp stage, bool erase_on_failure = false)
-        : stage(stage), erase_on_failure(erase_on_failure) {}
+        : stage(stage), erase_on_failure(erase_on_failure) {
+      assert(!erase_on_failure || stage.getBody()->empty());
+    }
 
     /// Gets whether the operation should be placed in the pipeline.
     explicit operator bool() const { return stage != nullptr; }
     /// Gets the stage the operation should be placed in.
     /*implicit*/ operator StageOp() const { return stage; }
 
+    /// The stage the operation shall be inserted into.
     StageOp stage;
+    /// Whether the stage shall be deleted if insertion fails.
     bool erase_on_failure = false;
   };
 
-  using PlacementFn = function_ref<Placement(PipelineBuilder&, Operation*)>;
-
-  /// Creates a `ktdf.pipeline` using @p builder and obtains a builder for it.
+  /// Initializes a builder on a PipelineOp created using @p builder .
   explicit PipelineBuilder(OpBuilder& builder, Location loc,
                            Allocator* allocator = nullptr)
       : PipelineBuilder(PipelineOp::create(builder, loc), allocator,
                         builder.getListener()) {}
+  explicit PipelineBuilder(ImplicitLocOpBuilder& builder,
+                           Allocator* allocator = nullptr)
+      : PipelineBuilder(PipelineOp::create(builder), allocator,
+                        builder.getListener()) {}
 
+  /// Ensures the PipelineOp is built.
   virtual ~PipelineBuilder() { build(); }
 
   PipelineBuilder(PipelineBuilder&&) = delete;
@@ -97,16 +120,13 @@ class PipelineBuilder : public ImplicitLocOpBuilder {
   auto operator=(const PipelineBuilder&) = delete;
 
   //===--------------------------------------------------------------------===//
-  // Builder interface
+  // Builder Interface
   //===--------------------------------------------------------------------===//
 
-  void setInsertionPoint() = delete;
-  void setInsertionPointAfter() = delete;
-  void setInsertionPointToStart() = delete;
-  void setInsertionPointToEnd() = delete;
-  void setInsertionPointAfterValue() = delete;
-  void clearInsertionPoint() = delete;
-  void restoreInsertionPoint() = delete;
+  /// Gets the underlying MLIRContext.
+  [[nodiscard]] auto getContext() const -> MLIRContext* {
+    return OpBuilder::getContext();
+  }
 
   /// Converts @p attr to a units array.
   ///
@@ -118,15 +138,24 @@ class PipelineBuilder : public ImplicitLocOpBuilder {
   [[nodiscard]] auto getPrivateBuilder() -> PrivateBuilder& {
     return private_builder_;
   }
-
   /// Gets an OpBuilder to insert reads into @p stage .
   [[nodiscard]] auto getReadBuilder(StageOp stage) -> OpBuilder;
   /// Gets an OpBuilder to insert writes into @p stage .
   [[nodiscard]] auto getWriteBuilder(StageOp stage) -> OpBuilder;
 
+  /// Builds the PipelineOp.
+  ///
+  /// Applies all deferred modifications to the IR and finalizes the result.
+  /// The PipelineBuilder is left in a state as if it was re-initialized on the
+  /// resulting operation.
+  virtual auto build() -> PipelineOp;
+
   //===--------------------------------------------------------------------===//
-  //
+  // Stage Building
   //===--------------------------------------------------------------------===//
+
+  using stage_iterator = Block::op_iterator<StageOp>;
+  using StageBuilderFn = function_ref<void(OpBuilder&, Location)>;
 
   /// Gets the stage for @p units , if it exists.
   [[nodiscard]] auto getStage(ArrayAttr units) const -> StageOp {
@@ -136,20 +165,34 @@ class PipelineBuilder : public ImplicitLocOpBuilder {
   [[nodiscard]] auto getStage(Attribute unit_or_units) const -> StageOp {
     return getStage(getUnits(unit_or_units));
   }
+  /// Gets the stage that @p op is in, if any.
+  [[nodiscard]] auto getStage(Operation* op) const -> StageOp;
 
-  /// Creates a stage.
+  /// Gets the stages in the pipeline.
+  [[nodiscard]] auto getStages() const -> iterator_range<stage_iterator> {
+    return getInsertionBlock()->getOps<StageOp>();
+  }
+
+  /// Creates a new stage.
   ///
   /// If @p units is not `nullptr`, the `applicable_units` will be set and the
   /// stage will be considered the new insertion point for that placement.
+  virtual auto createStage(ArrayAttr units, std::optional<Location> loc,
+                           StageBuilderFn body_builder) -> StageOp;
+  /// Creates a new stage.
+  ///
+  /// See createStage(ArrayAttr, std::optional<Location>, StageBuilderFn) for
+  /// more information.
   auto createStage(ArrayAttr units = nullptr,
-                   BodyBuilderFn body_builder = nullptr,
-                   std::optional<Location> loc = std::nullopt) -> StageOp;
+                   std::optional<Location> loc = std::nullopt) -> StageOp {
+    return createStage(units, loc, nullptr);
+  }
 
   /// Gets or creates a stage for @p units .
   auto getOrCreateStage(ArrayAttr units,
                         std::optional<Location> loc = std::nullopt) -> StageOp {
     auto stage = getStage(units);
-    return stage ? stage : createStage(units, {}, loc);
+    return stage ? stage : createStage(units, loc);
   }
   /// Gets or creates a stage for @p unit_or_units .
   auto getOrCreateStage(Attribute unit_or_units,
@@ -157,30 +200,12 @@ class PipelineBuilder : public ImplicitLocOpBuilder {
     return getOrCreateStage(getUnits(unit_or_units), loc);
   }
 
-  /// Returns a Placement that will be `erased_on_failure`.
-  auto tryPlacement(std::optional<Location> loc = std::nullopt) -> Placement {
-    return {createStage({}, {}, loc), true};
-  }
-  /// Returns a Placement for @p units that will be `erased_on_failure` if it
-  /// was created.
-  auto tryPlacement(ArrayAttr units, std::optional<Location> loc = std::nullopt)
-      -> Placement {
-    if (auto stage = getStage(units); stage) {
-      return {stage, false};
-    }
-    return {createStage(units, {}, loc), true};
-  }
-  /// Returns a Placement for @p unit_or_units that will be `erased_on_failure`
-  /// if it was created.
-  auto tryPlacement(Attribute unit_or_units,
-                    std::optional<Location> loc = std::nullopt) -> Placement {
-    return tryPlacement(getUnits(unit_or_units), loc);
-  }
+  //===--------------------------------------------------------------------===//
+  // FIFO Building
+  //===--------------------------------------------------------------------===//
 
-  /// Determines whether @p consumer (transitively) depends on @p producer .
-  [[nodiscard]] auto hasDependency(StageOp producer, StageOp consumer) -> bool {
-    return dependencies_.contains(consumer, producer, true);
-  }
+  /// Gets the underlying FIFO allocator.
+  [[nodiscard]] auto getAllocator() const -> Allocator& { return *allocator_; }
 
   /// Adds a dependency on @p producer to @p consumer .
   ///
@@ -190,9 +215,6 @@ class PipelineBuilder : public ImplicitLocOpBuilder {
   ///
   /// @return Whether a new dependency was added.
   auto addDependency(Operation* producer, Operation* consumer) -> bool;
-
-  /// Gets the underlying FIFO allocator.
-  [[nodiscard]] auto getAllocator() const -> Allocator& { return *allocator_; }
 
   /// Determines whether @p producer is available in @p consumer .
   [[nodiscard]] auto isAvailable(OpResult producer, StageOp consumer) const
@@ -207,17 +229,37 @@ class PipelineBuilder : public ImplicitLocOpBuilder {
   /// transport the value from its producer stage to the consumer stage, and
   /// the read is returned.
   ///
-  /// @pre    `isAvailable(producer, consumer) || isForwardable(value)`
+  /// @pre    `isAvailable(producer, consumer) || canForward(value)`
   ///
   /// @retval Value   Value of @p producer in @p consumer .
   [[nodiscard]] virtual auto forward(OpResult producer, StageOp consumer)
       -> Value;
 
-  /// Computes the natural placement for @p op .
-  ///
-  /// If all users of @p op are in the same stage, this stage becomes the
-  /// natural placement for @p op . Otherwise, the result is `nullopt`.
-  [[nodiscard]] static auto naturalPlacement(Operation* op) -> Placement;
+  //===--------------------------------------------------------------------===//
+  // Insertion & Placement
+  //===--------------------------------------------------------------------===//
+
+  using PlacementFn = function_ref<Placement(PipelineBuilder&, Operation*)>;
+
+  /// Returns a Placement that will be `erased_on_failure`.
+  auto tryPlacement(std::optional<Location> loc = std::nullopt) -> Placement {
+    return {createStage({}, loc), true};
+  }
+  /// Returns a Placement for @p units that will be `erased_on_failure` if it
+  /// was created.
+  auto tryPlacement(ArrayAttr units, std::optional<Location> loc = std::nullopt)
+      -> Placement {
+    if (auto stage = getStage(units); stage) {
+      return {stage, false};
+    }
+    return {createStage(units, loc), true};
+  }
+  /// Returns a Placement for @p unit_or_units that will be `erased_on_failure`
+  /// if it was created.
+  auto tryPlacement(Attribute unit_or_units,
+                    std::optional<Location> loc = std::nullopt) -> Placement {
+    return tryPlacement(getUnits(unit_or_units), loc);
+  }
 
   /// Attempts to insert @p op into @p placement .
   virtual auto insert(Operation* op, Placement placement) -> LogicalResult;
@@ -229,18 +271,9 @@ class PipelineBuilder : public ImplicitLocOpBuilder {
   void insert(ArrayRef<Operation*> ops, PlacementFn placement_fn,
               DominanceInfo& dominance);
 
-  /// Finalizes the outstanding modifications to the pipeline.
-  ///
-  /// If there are no modifications to perform, does nothing. After finalizing,
-  /// the PipelineBuilder will be ready again to queue more modifications to
-  /// the same pipeline.
-  auto build() -> PipelineOp;
-
  protected:
   explicit PipelineBuilder(PipelineOp pipeline, Allocator* allocator = nullptr,
                            OpBuilder::Listener* listener = nullptr);
-
-  virtual void erase(StageOp stage);
 
   PrivateBuilder private_builder_;
   DenseMap<ArrayAttr, StageOp> units_to_stage_;
@@ -249,17 +282,6 @@ class PipelineBuilder : public ImplicitLocOpBuilder {
   DenseMap<OpResult, SmallVector<ReadFromFifoOp>> fifos_;
   StageDependency dependencies_;
 };
-
-/// Eliminates @p via if possible.
-///
-/// If @p via has no users, it is erased. If @p via is the single user of a
-/// ReadFromFifoOp, and has a single use in a WriteToFifoOp, it is replaced with
-/// a DataTransferOp instead, erasing all three ops.
-///
-/// @pre  `rewriter` is positioned before @p via .
-///
-/// @return Success if the IR was modified, otherwise failure.
-auto eliminateVia(RewriterBase& rewriter, ViaOp via) -> LogicalResult;
 
 }  // namespace mlir::ktdf
 
