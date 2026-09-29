@@ -47,6 +47,9 @@ class PipelineBuilder : protected ImplicitLocOpBuilder {
   struct Allocator {
     /// Gets the default allocator.
     [[nodiscard]] static auto getDefault() -> Allocator&;
+    /// Gets the FifoSlotType between @p producer and @p consumer .
+    [[nodiscard]] static auto getFifoSlotType(OpResult producer,
+                                              StageOp consumer) -> FifoSlotType;
 
     /*implicit*/ Allocator() = default;
     /*implicit*/ Allocator(Allocator&&) = default;

@@ -70,6 +70,20 @@ auto PipelineBuilder::Allocator::getDefault() -> Allocator& {
   return instance;
 }
 
+auto PipelineBuilder::Allocator::getFifoSlotType(OpResult producer,
+                                                 StageOp consumer)
+    -> FifoSlotType {
+  const auto value_type = cast<ShapedType>(producer.getType());
+  const auto producer_unit =
+      getUnitOrUnits(producer.getOwner()->getParentOfType<StageOp>());
+  const auto consumer_unit = getUnitOrUnits(consumer);
+
+  // Create the appropriate type for the slot, which flattens the elements.
+  return FifoSlotType::get(producer.getContext(), producer_unit, consumer_unit,
+                           value_type.getNumElements(),
+                           value_type.getElementType());
+}
+
 auto PipelineBuilder::Allocator::canAllocate(OpResult producer) const -> bool {
   const auto value_type = dyn_cast<ShapedType>(producer.getType());
   return value_type && !isa<MemRefType>(value_type) &&
@@ -79,21 +93,10 @@ auto PipelineBuilder::Allocator::canAllocate(OpResult producer) const -> bool {
 auto PipelineBuilder::Allocator::allocate(PipelineBuilder& builder,
                                           OpResult producer, StageOp consumer)
     -> TypedValue<FifoSlotType> {
-  const auto value_type = cast<ShapedType>(producer.getType());
-
-  // We can't just read from an existing FIFO slot, we'll have to make a copy
-  // of the value at the producer's location and plumb a new FIFO.
-  const auto producer_unit =
-      getUnitOrUnits(producer.getOwner()->getParentOfType<StageOp>());
-  const auto consumer_unit = getUnitOrUnits(consumer);
-
-  // Create the appropriate type for the slot, which flattens the elements.
-  const auto slot_type = FifoSlotType::get(
-      builder.getContext(), producer_unit, consumer_unit,
-      value_type.getNumElements(), value_type.getElementType());
   return cast<TypedValue<FifoSlotType>>(
       builder.getPrivateBuilder()
-          .createFifo({slot_type}, {}, consumer->getLoc())
+          .createFifo({getFifoSlotType(producer, consumer)}, {},
+                      consumer->getLoc())
           .front());
 }
 
