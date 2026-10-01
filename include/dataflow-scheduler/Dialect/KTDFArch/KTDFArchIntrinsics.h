@@ -363,6 +363,7 @@ struct SIMD : FeatureAttr<&KTDFArchDialect::getFeatureSIMDAttrName> {
   static constexpr StringLiteral kSplatAttrName = "splat";
   static constexpr StringLiteral kZeroPadAttrName = "zero_pad";
   static constexpr StringLiteral kLanesAttrName = "lanes";
+  static constexpr StringLiteral kSubSimdLanesAttrName = "sub_simd_lanes";
 
   using LanesAttr = TypedMapAttr<TypeAttr, I64Attr>;
 
@@ -391,6 +392,21 @@ struct SIMD : FeatureAttr<&KTDFArchDialect::getFeatureSIMDAttrName> {
   /// @returns  Number of lanes for @p scalar_type , or 0 if not supported.
   [[nodiscard]] auto getLanes(Type scalar_type) const -> int64_t {
     if (const auto lanes = getLanes(); lanes) {
+      return lanes.getValue(TypeAttr::get(scalar_type)).value_or(0);
+    }
+    return 0;
+  }
+
+  /// Gets the width of a sub-SIMD group, in lanes, per scalar type.  The lanes
+  /// of a group are what a shuffle mode naming sub-SIMD groups operates over.
+  [[nodiscard]] auto getSubSimdLanes() const -> LanesAttr {
+    return getAttr<LanesAttr>(kSubSimdLanesAttrName);
+  }
+  /// Gets the width of a sub-SIMD group, in lanes, for @p scalar_type .
+  ///
+  /// @returns  Group width for @p scalar_type , or 0 if not declared.
+  [[nodiscard]] auto getSubSimdLanes(Type scalar_type) const -> int64_t {
+    if (const auto lanes = getSubSimdLanes(); lanes) {
       return lanes.getValue(TypeAttr::get(scalar_type)).value_or(0);
     }
     return 0;

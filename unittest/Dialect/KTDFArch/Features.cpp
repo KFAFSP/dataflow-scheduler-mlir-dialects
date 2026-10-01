@@ -154,6 +154,30 @@ TEST_CASE("mlir::ktdf_arch::feature::SIMD") {
                                      "{ lanes = #ktdf_arch.map<f16 = 4> }",
                                      "{ lanes = #ktdf_arch.map<f16 = 2> }"));
   }
+
+  SUBCASE("sub_simd_lanes") {
+    CHECK(testFeature<feature::SIMD>(
+        &context, "{ sub_simd_lanes = #ktdf_arch.map<> }", "{  }"));
+    CHECK(testFeature<feature::SIMD>(
+        &context, "{ }",
+        "{ sub_simd_lanes = #ktdf_arch.map<> }"));
+    CHECK(testFeature<feature::SIMD>(
+        &context, "{ sub_simd_lanes = #ktdf_arch.map<> }",
+        "{ sub_simd_lanes = #ktdf_arch.map<> }"));
+
+    CHECK_FALSE(testFeature<feature::SIMD>(
+        &context, "{ }", "{ sub_simd_lanes = #ktdf_arch.map<f16 = 2> }"));
+    CHECK_FALSE(testFeature<feature::SIMD>(
+        &context, "{ sub_simd_lanes = #ktdf_arch.map<f16 = 1> }",
+        "{ sub_simd_lanes = #ktdf_arch.map<f16 = 2> }"));
+    CHECK_FALSE(testFeature<feature::SIMD>(
+        &context, "{ sub_simd_lanes = #ktdf_arch.map<f32 = 1> }",
+        "{ sub_simd_lanes = #ktdf_arch.map<f16 = 2> }"));
+
+    CHECK(testFeature<feature::SIMD>(
+        &context, "{ sub_simd_lanes = #ktdf_arch.map<f16 = 4> }",
+        "{ sub_simd_lanes = #ktdf_arch.map<f16 = 2> }"));
+  }
 }
 
 TEST_CASE("mlir::ktdf_arch::feature::Queue") {

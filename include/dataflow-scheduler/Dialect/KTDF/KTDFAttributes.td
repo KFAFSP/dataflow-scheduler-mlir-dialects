@@ -66,4 +66,31 @@ def KTDF_LoopTypeAttr : EnumAttr<KTDF_Dialect, KTDF_LoopTypeEnum, "loop_type"> {
   let assemblyFormat = "`<` $value `>`";
 }
 
+//===----------------------------------------------------------------------===//
+// SplatModeAttr
+//===----------------------------------------------------------------------===//
+
+def KTDF_SplatModeAttr : EnumAttr<KTDF_Dialect, KTDF_SplatModeEnum, "splat"> {
+  let summary = "KTDF splat mode attribute indicating how to form a full SIMD vector from a subset of elements";
+  let description = [{
+    Records how to form a full SIMD-width vector from the subset of elements
+    delivered over the FIFO. The FIFO carries fewer than a full SIMD width of
+    elements; the attribute names the shuffle that fills in the remaining lanes.
+
+    `first_subsimd_lane_to_each_subsimd` fills every lane of each sub-SIMD
+    group with the value held by its first lane. The group width is not encoded
+    here; it is read from the compute unit's
+    `ktdf_arch.feature.simd = { sub_simd_lanes }`.
+
+    Example:
+
+    ```mlir
+    %d = ktdf.read_from_fifo %slot
+        {splat = #ktdf.splat<first_subsimd_lane_to_each_subsimd>}
+        : !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16> -> memref<64xf16>
+    ```
+  }];
+  let assemblyFormat = "`<` $value `>`";
+}
+
 #endif // DATAFLOW_SCHEDULER_DIALECT_KTDF_KTDFATTRIBUTES_TD

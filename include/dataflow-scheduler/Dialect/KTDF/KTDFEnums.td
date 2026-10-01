@@ -39,4 +39,18 @@ def KTDF_LoopTypeEnum : I32EnumAttr<"LoopType",
   let genSpecializedAttr = 0;
 }
 
+//===----------------------------------------------------------------------===//
+// Splat Mode Enum
+//===----------------------------------------------------------------------===//
+
+def KTDF_SplatModeEnum : I32EnumAttr<"SplatMode",
+    "KTDF splat mode attribute indicating how to form a full SIMD vector from a subset of elements",
+    [
+      I32EnumAttrCase<"FirstSubSimdLaneToEachSubSimd", 0,
+                      "first_subsimd_lane_to_each_subsimd">
+    ]> {
+  let cppNamespace = "::mlir::ktdf";
+  let genSpecializedAttr = 0;
+}
+
 #endif // DATAFLOW_SCHEDULER_DIALECT_KTDF_KTDFENUMS_TD

@@ -84,6 +84,13 @@ ktdf_arch.device @simd_invalid_lanes {
 
 // -----
 
+ktdf_arch.device @simd_invalid_sub_simd_lanes {
+  // expected-error@+1 {{'sub_simd_lanes' requires map from type to 64-bit integer}}
+  exec_unit { ktdf_arch.features = { ktdf_arch.feature.simd = { sub_simd_lanes = 1 } } }
+}
+
+// -----
+
 ktdf_arch.device @queue_not_on_link {
   // expected-error@+1 {{only valid on links}}
   exec_unit { ktdf_arch.features = { ktdf_arch.feature.queue = { size = "a" } } }

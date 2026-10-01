@@ -30,6 +30,7 @@ include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 
+include "dataflow-scheduler/Dialect/KTDF/KTDFAttributes.td"
 include "dataflow-scheduler/Dialect/KTDF/KTDFTypes.td"
 
 // Base class for KTDF dialect operations
@@ -168,6 +169,18 @@ def KTDF_ReadFromFifoOp : KTDF_Op<"read_from_fifo", [
     limited to the op's parent region scope, cannot leave that scope (eg via
     yield) and does not alias any other memrefs.
 
+    ## Splat mode
+
+    The optional `splat` attribute records how to form a full SIMD-width vector
+    from the subset of elements delivered over the FIFO. The FIFO carries fewer
+    than a full SIMD width of elements; the attribute names the shuffle that
+    fills in the remaining lanes to produce the final vector.
+
+    The scheduler sets the attribute on every `ktdf.read_from_fifo` that reads
+    such a transfer. The lowering to DFIR emits the named shuffle immediately
+    after the receive. Any device pattern that re-reads the slot as a buffer
+    must preserve the attribute, because the shuffle is still owed.
+
     Example:
     ```mlir
     // Read from a FIFO slot into a tensor
@@ -182,11 +195,17 @@ def KTDF_ReadFromFifoOp : KTDF_Op<"read_from_fifo", [
     %size = arith.constant 8 : index
     %dyn_slot = ktdf.fifo.allocate(%size) -> !ktdf.fifo.slot<"SFU" -> "L1SU", ?xf16>
     %dyn_data = ktdf.read_from_fifo %dyn_slot : !ktdf.fifo.slot<"SFU" -> "L1SU", ?xf16> -> tensor<?xf16>
+
+    // Read a splat the load unit left one element per sub-SIMD group wide
+    %splat = ktdf.read_from_fifo %slot
+        {splat = #ktdf.splat<first_subsimd_lane_to_each_subsimd>}
+        : !ktdf.fifo.slot<"L1LU" -> "SFU", 64xf16> -> memref<64xf16>
     ```
   }];
 
   let arguments = (ins
-    KTDF_FifoSlotType:$fifo_slot
+    KTDF_FifoSlotType:$fifo_slot,
+    OptionalAttr<KTDF_SplatModeAttr>:$splat
   );
 
   let results = (outs
@@ -198,6 +217,14 @@ def KTDF_ReadFromFifoOp : KTDF_Op<"read_from_fifo", [
   }];
 
   let hasVerifier = 1;
+
+  let builders = [
+    // A read of a slot that owes no shuffle, i.e. every read without a splat
+    // attribute.
+    OpBuilder<(ins "::mlir::Type":$result, "::mlir::Value":$fifo_slot), [{
+      build($_builder, $_state, result, fifo_slot, /*splat=*/nullptr);
+    }]>
+  ];
 
   let extraClassDeclaration = [{
     /// Returns the element type of the FIFO slot
