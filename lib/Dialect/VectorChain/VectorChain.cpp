@@ -159,9 +159,15 @@ LogicalResult ConstantBitstreamOp::verify() {
         return failure();
       }
 
-      int64_t int_val = int_attr.getInt();
-      int64_t mask = pow(2, result_bitwidth) - 1;
-      if ((int_val & mask) != int_val) {
+      // The low result_bitwidth bits, all of them for a 64-bit element type:
+      // 2^64 - 1 does not fit an int64_t, and a double converted to one past
+      // its range is undefined -- on x86 it came out as INT64_MIN, rejecting
+      // every i64 and f64 value.
+      const auto bits = static_cast<uint64_t>(int_attr.getInt());
+      const uint64_t mask = result_bitwidth >= 64
+                                ? ~uint64_t(0)
+                                : (uint64_t(1) << result_bitwidth) - 1;
+      if ((bits & mask) != bits) {
         op->emitOpError(
             "value attribute contains element that exceeds bitwidth of output "
             "element type");
