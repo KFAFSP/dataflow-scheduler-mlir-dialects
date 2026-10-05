@@ -25,7 +25,6 @@
 
 #include <optional>
 
-#include "dataflow-scheduler/Dialect/KTDF/Analysis/StageDependency.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
 
 namespace mlir {
@@ -285,7 +284,6 @@ class PipelineBuilder : protected ImplicitLocOpBuilder {
   DenseMap<StageOp, Token> tokens_;
   Allocator* allocator_;
   DenseMap<OpResult, SmallVector<ReadFromFifoOp>> fifos_;
-  StageDependency dependencies_;
 };
 
 }  // namespace mlir::ktdf

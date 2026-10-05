@@ -18,6 +18,7 @@
 
 #include "dataflow-scheduler/Dialect/KTDF/Transforms/PipelineBuilder.h"
 
+#include <llvm/ADT/BreadthFirstIterator.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
@@ -33,7 +34,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
-#include "dataflow-scheduler/Dialect/KTDF/Analysis/StageDependency.h"
+#include "dataflow-scheduler/Dialect/KTDF/Analysis/StageGraph.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
 #include "dataflow-scheduler/Dialect/KTDF/KTDFTypes.h"
 
@@ -217,7 +218,6 @@ auto PipelineBuilder::addDependency(StageOp producer, StageOp consumer)
     return false;
   }
   rewriter.finalizeOpModification(consumer);
-  dependencies_.insert(consumer, producer);
   return true;
 }
 
@@ -306,8 +306,8 @@ enum class ForwardingResult : char {
 
 /// Determines whether @p result can be forwarded when placed in @p stage .
 [[nodiscard]] auto checkForwardingOf(
-    StageOp stage, OpResult result, StageDependency& dependency,
-    const PipelineBuilder::Allocator& allocator) -> ForwardingResult {
+    StageOp stage, OpResult result, const PipelineBuilder::Allocator& allocator)
+    -> ForwardingResult {
   auto status = ForwardingResult::Skip;
 
   for (auto* const user : result.getUsers()) {
@@ -321,7 +321,7 @@ enum class ForwardingResult : char {
       continue;
     }
 
-    if (dependency.contains(stage, consumer_stage, true)) {
+    if (StageGraph::Node(stage).dependsOn(consumer_stage)) {
       // Forwarding this result would create a cyclic dependency.
       LDBG() << "  (WARN) detected dependency cycle between";
       LDBG() << "    consumer: " << OpWithFlags(consumer_stage, kSkipRegions);
@@ -355,11 +355,10 @@ enum class ForwardingResult : char {
 /// @pre  All users of @p result are within the pipeline.
 [[nodiscard]] auto checkForwardingOf(
     StageOp stage, Operation* op, SmallVectorImpl<OpResult>& forward,
-    StageDependency& dependency, const PipelineBuilder::Allocator& allocator)
-    -> ForwardingResult {
+    const PipelineBuilder::Allocator& allocator) -> ForwardingResult {
   auto status = ForwardingResult::Forward;
   for (auto result : op->getResults()) {
-    switch (checkForwardingOf(stage, result, dependency, allocator)) {
+    switch (checkForwardingOf(stage, result, allocator)) {
       case ForwardingResult::Failure:
         return ForwardingResult::Failure;
       case ForwardingResult::Forward:
@@ -398,8 +397,8 @@ auto PipelineBuilder::insert(Operation* op, Placement placement)
   // Determine all the results that we will have to forward, checking for
   // dependency cycles in the process.
   SmallVector<OpResult> results_to_forward;
-  switch (checkForwardingOf(placement.stage, op, results_to_forward,
-                            dependencies_, *allocator_)) {
+  switch (
+      checkForwardingOf(placement.stage, op, results_to_forward, *allocator_)) {
     case ForwardingResult::Failure:
       return failure();
     case ForwardingResult::Forward:
