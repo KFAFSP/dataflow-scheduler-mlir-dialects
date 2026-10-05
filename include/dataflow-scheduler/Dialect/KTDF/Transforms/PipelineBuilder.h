@@ -220,24 +220,29 @@ class PipelineBuilder : protected ImplicitLocOpBuilder {
   /// @return Whether a new dependency was added.
   auto addDependency(Operation* producer, Operation* consumer) -> bool;
 
-  /// Determines whether @p producer is available in @p consumer .
-  [[nodiscard]] auto isAvailable(OpResult producer, StageOp consumer) const
-      -> bool;
-  /// Determines whether @p producer can be forwarded between stages.
-  [[nodiscard]] virtual auto canForward(OpResult producer) const -> bool;
+  /// Determines whether @p operand is available at its use.
+  [[nodiscard]] auto isAvailable(const OpOperand& operand) const -> bool;
+  /// Determines whether @p producer can be sent to another stage.
+  [[nodiscard]] auto canSend(OpResult producer) const -> bool;
+  /// Determines whether @p operand can be received from another stage.
+  [[nodiscard]] auto canReceive(const OpOperand& operand) const -> bool;
 
-  /// Forwards @p producer to @p consumer .
+  /// Sends @p producer to @p consumer via a FIFO and returns the read value.
   ///
-  /// If @p producer is already accessible in @p consumer , it (or its last
-  /// read) is returned. Otherwise, if it can be forwarded, a FIFO is created to
-  /// transport the value from its producer stage to the consumer stage, and
-  /// the read is returned.
+  /// If @p producer is private, simply returns it (forwarding will be handled
+  /// by the PrivateBuilder on `build()` or destruction). Otherwise, a FIFO is
+  /// allocated, @p producer is written to it, and the result is read from it.
   ///
-  /// @pre    `isAvailable(producer, consumer) || canForward(value)`
+  /// @pre  `getPrivateBuilder().isPrivate(producer.getOwner()) ||
+  ///        canSend(producer)`
+  virtual auto send(OpResult producer, StageOp consumer) -> Value;
+  /// Receives @p operand via a FIFO if needed and updates @p operand .
   ///
-  /// @retval Value   Value of @p producer in @p consumer .
-  [[nodiscard]] virtual auto forward(OpResult producer, StageOp consumer)
-      -> Value;
+  /// If @p operand is already available, does nothing. Otherwise, the value is
+  /// sent to the consumer stage and the operand is replaced with the read.
+  ///
+  /// @pre  `isAvailable(operand) || canReceive(operand)`
+  virtual void receive(OpOperand& operand);
 
   //===--------------------------------------------------------------------===//
   // Insertion & Placement
@@ -283,7 +288,6 @@ class PipelineBuilder : protected ImplicitLocOpBuilder {
   DenseMap<ArrayAttr, StageOp> units_to_stage_;
   DenseMap<StageOp, Token> tokens_;
   Allocator* allocator_;
-  DenseMap<OpResult, SmallVector<ReadFromFifoOp>> fifos_;
 };
 
 }  // namespace mlir::ktdf

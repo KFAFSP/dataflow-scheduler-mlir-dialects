@@ -29,6 +29,7 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/Dominance.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -232,60 +233,98 @@ auto PipelineBuilder::addDependency(Operation* producer, Operation* consumer)
   return addDependency(producer_stage, consumer_stage);
 }
 
-auto PipelineBuilder::isAvailable(OpResult producer, StageOp consumer) const
-    -> bool {
-  return producer.getParentRegion()->isAncestor(consumer->getParentRegion()) ||
-         private_builder_.isPrivate(producer.getOwner());
-}
-
-auto PipelineBuilder::canForward(OpResult producer) const -> bool {
-  auto stage = producer.getOwner()->getParentOfType<StageOp>();
-  return stage && stage->getBlock() == getInsertionBlock() &&
-         allocator_->canAllocate(producer);
-}
-
-auto PipelineBuilder::forward(OpResult producer, StageOp consumer) -> Value {
-  if (isAvailable(producer, consumer)) {
-    // The consumer already has access to the value, either because the producer
-    // is in the consumer stage, the private segment, or outside the pipeline.
-    return producer;
-  }
-
-  assert(canForward(producer));
-
-  auto producer_stage = producer.getOwner()->getParentOfType<StageOp>();
-  assert(producer_stage && producer_stage->getBlock() == getInsertionBlock());
-
-  // Lookup existing FIFO reads that produce this value.
-  auto& reads = fifos_[producer];
-  for (auto read : reads) {
-    if (read->getParentOp() == consumer) {
-      return read;
+auto PipelineBuilder::isAvailable(const OpOperand& operand) const -> bool {
+  auto* const definition = operand.get().getParentRegion();
+  for (auto* region = operand.getOwner()->getParentRegion(); region != nullptr;
+       region = region->getParentRegion()) {
+    if (region == definition) {
+      return true;
+    }
+    if (region->getParentOp()->hasTrait<OpTrait::IsIsolatedFromAbove>()) {
+      return false;
     }
   }
 
-  // Allocate a new FIFO slot for this value.
-  const auto slot = allocator_->allocate(*this, producer, consumer);
-  assert(slot && "allocator may not fail");
+  auto producer = dyn_cast<OpResult>(operand.get());
+  return producer && private_builder_.isPrivate(producer.getOwner());
+}
 
-  // On the producer side, create a new write to the slot.
-  {
+auto PipelineBuilder::canSend(OpResult producer) const -> bool {
+  auto stage = getStage(producer.getOwner());
+  return stage && allocator_->canAllocate(producer);
+}
+
+auto PipelineBuilder::canReceive(const OpOperand& operand) const -> bool {
+  auto stage = getStage(operand.getOwner());
+  auto producer = dyn_cast<OpResult>(operand.get());
+  return stage && producer && canSend(producer);
+}
+
+namespace {
+
+/// Finds a `ktdf.read_from_fifo` that produces @p value in @p block .
+[[nodiscard]] auto findReadIn(Value value, Block* block) -> ReadFromFifoOp {
+  for (auto* const user : value.getUsers()) {
+    auto write = dyn_cast<WriteToFifoOp>(user);
+    if (!write || value != write.getData()) {
+      continue;
+    }
+
+    for (auto& use : write.getFifoSlot().getUses()) {
+      auto read = dyn_cast<ReadFromFifoOp>(use.getOwner());
+      if (read && read->getBlock() != block) {
+        return read;
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+}  // namespace
+
+auto PipelineBuilder::send(OpResult producer, StageOp consumer) -> Value {
+  if (private_builder_.isPrivate(producer.getOwner())) {
+    // The producer is a private op, which all stages have access to.
+    return producer;
+  }
+
+  assert(canSend(producer));
+  auto producer_stage = getStage(producer.getOwner());
+  assert(producer_stage);
+
+  // Lookup existing FIFO reads that produce this value.
+  auto read = findReadIn(producer, consumer.getBody());
+  if (!read) {
+    // Allocate a new FIFO slot for this value.
+    const auto slot = allocator_->allocate(*this, producer, consumer);
+    assert(slot && "allocator may not fail");
+
     auto builder = getWriteBuilder(producer_stage);
     WriteToFifoOp::create(builder, consumer->getLoc(), producer, slot);
-  }
 
-  // On the consumer side, create a new read from the slot.
-  ReadFromFifoOp read;
-  {
-    auto builder = getReadBuilder(consumer);
+    // On the consumer side, create a new read from the slot.
+    builder = getReadBuilder(consumer);
     read = ReadFromFifoOp::create(builder, consumer->getLoc(),
                                   producer.getType(), slot);
-    reads.push_back(read);
+
+    // Introduce a dependency between producer and consumer via private tokens.
+    addDependency(producer_stage, consumer);
   }
 
-  // Introduce a dependency between producer and consumer via private tokens.
-  addDependency(producer_stage, consumer);
   return read;
+}
+
+void PipelineBuilder::receive(OpOperand& operand) {
+  if (isAvailable(operand)) {
+    return;
+  }
+
+  assert(canReceive(operand));
+  auto consumer_stage = getStage(operand.getOwner());
+  assert(consumer_stage);
+
+  operand.set(send(cast<OpResult>(operand.get()), consumer_stage));
 }
 
 namespace {
@@ -429,8 +468,7 @@ auto PipelineBuilder::insert(Operation* op, Placement placement)
     for (auto& use : result.getUses()) {
       auto stage = use.getOwner()->getParentOfType<StageOp>();
       assert(stage && "user outside of pipeline");
-      auto forwarded = forward(result, stage);
-      use.set(forwarded);
+      receive(use);
     }
   }
 
