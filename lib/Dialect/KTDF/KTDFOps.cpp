@@ -22,6 +22,7 @@
 
 // clang-format off
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
+#include "dataflow-scheduler/Dialect/KTDF/KTDFTypes.h"
 // clang-format on
 
 #include <llvm/ADT/STLExtras.h>
@@ -32,6 +33,7 @@
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
 using namespace mlir;
@@ -421,6 +423,82 @@ void StageOp::build(OpBuilder& builder, OperationState& state,
   }
 }
 
+auto StageOp::isInDependency(OpOperand& operand) -> bool {
+  assert(operand.getOwner() == *this);
+  return operand.getOperandNumber() <
+         static_cast<unsigned>(getProperties().operandSegmentSizes[0]);
+}
+
+auto StageOp::addInDependency(TypedValue<TokenType> token) -> bool {
+  if (llvm::is_contained(getDependsIn(), token)) {
+    return false;
+  }
+
+  auto& segments = getProperties().operandSegmentSizes;
+  (*this)->insertOperands(segments[0]++, {token});
+  return true;
+}
+
+auto StageOp::removeInDependency(Value token) -> bool {
+  for (auto& dep : getDependsInMutable()) {
+    if (dep.get() == token) {
+      auto& segments = getProperties().operandSegmentSizes;
+      (*this)->eraseOperands(dep.getOperandNumber(), 1);
+      --segments[0];
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void StageOp::setDependsIn(ValueRange tokens) {
+  assert(llvm::all_of(tokens.getTypes(),
+                      [](Type type) { return isa<TokenType>(type); }));
+
+  auto& segments = getProperties().operandSegmentSizes;
+  (*this)->setOperands(0, segments[0], tokens);
+  segments[0] = tokens.size();
+}
+
+auto StageOp::isOutDependency(OpOperand& operand) -> bool {
+  assert(operand.getOwner() == *this);
+  return operand.getOperandNumber() >=
+         static_cast<unsigned>(getProperties().operandSegmentSizes[0]);
+}
+
+auto StageOp::addOutDependency(TypedValue<TokenType> token) -> bool {
+  if (llvm::is_contained(getDependsOut(), token)) {
+    return false;
+  }
+
+  auto& segments = getProperties().operandSegmentSizes;
+  (*this)->insertOperands(segments[0] + segments[1]++, {token});
+  return true;
+}
+
+auto StageOp::removeOutDependency(Value token) -> bool {
+  for (auto& dep : getDependsOutMutable()) {
+    if (dep.get() == token) {
+      auto& segments = getProperties().operandSegmentSizes;
+      (*this)->eraseOperands(dep.getOperandNumber(), 1);
+      --segments[1];
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void StageOp::setDependsOut(ValueRange tokens) {
+  assert(llvm::all_of(tokens.getTypes(),
+                      [](Type type) { return isa<TokenType>(type); }));
+
+  auto& segments = getProperties().operandSegmentSizes;
+  (*this)->setOperands(segments[0], segments[1], tokens);
+  segments[1] = tokens.size();
+}
+
 //===----------------------------------------------------------------------===//
 // PrivateOp
 //===----------------------------------------------------------------------===//
@@ -460,7 +538,7 @@ struct CanonicalizePrivateResults : OpRewritePattern<PrivateOp> {
       return failure();
     }
 
-    PipelinePrivatizer::canonicalize(rewriter, op.getParentOp());
+    PrivateBuilder::canonicalize(rewriter, op);
     return success();
   }
 
@@ -695,6 +773,37 @@ void DataTransferOp::getEffects(
 }
 
 //===----------------------------------------------------------------------===//
+// ViaOp
+//===----------------------------------------------------------------------===//
+
+auto ViaOp::collectHops(SmallVectorImpl<Attribute>& hops)
+    -> TypedValue<ShapedType> {
+  const auto begin = hops.size();
+
+  TypedValue<ShapedType> result;
+  for (auto hop = *this; hop;) {
+    llvm::append_range(hops, llvm::reverse(hop.getHops()));
+    result = hop.getOperand();
+    hop = result.getDefiningOp<ViaOp>();
+  }
+
+  std::reverse(hops.data() + begin, hops.end());
+  return result;
+}
+
+auto ViaOp::fold(FoldAdaptor /*adaptor*/) -> OpFoldResult {
+  if (auto prev = getOperand().getDefiningOp<ViaOp>(); prev) {
+    // Combine the hops, removing any redundant ones.
+    SmallVector<Attribute> hops;
+    setOperand(collectHops(hops));
+    hops.erase(llvm::unique(hops), hops.end());
+    setHopsAttr(ArrayAttr::get(getContext(), hops));
+  }
+
+  return nullptr;
+}
+
+//===----------------------------------------------------------------------===//
 // IndDataTransferOp
 //===----------------------------------------------------------------------===//
 
@@ -702,18 +811,20 @@ void IndDataTransferOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>&
         effects) {
   // Effect assignment (consistent with DataTransferOp::getEffects):
-  //   ind_src memref: Read             — IAB read to obtain scatter/gather addr
-  //   dir_src memref: Read             — data source
-  //   dir_src fifo:   Read + Write     — consuming a FIFO slot mutates its state
-  //   ind_dst memref: Read             — IAB read to obtain scatter dest address
-  //   dir_dst memref: Write            — data destination
-  //   dir_dst fifo:   Write            — producing into a FIFO slot
+  //   ind_src memref: Read            — IAB read to obtain scatter/gather addr
+  //   dir_src memref: Read            — data source
+  //   dir_src fifo:   Read + Write    — consuming a FIFO slot mutates its state
+  //   ind_dst memref: Read            — IAB read to obtain scatter dest address
+  //   dir_dst memref: Write           — data destination
+  //   dir_dst fifo:   Write           — producing into a FIFO slot
 
   // IAB memrefs are always reads.
   if (isGather())
-    effects.emplace_back(MemoryEffects::Read::get(), &getIndSrcMemrefOpOperand());
+    effects.emplace_back(MemoryEffects::Read::get(),
+                         &getIndSrcMemrefOpOperand());
   if (isScatter())
-    effects.emplace_back(MemoryEffects::Read::get(), &getIndDstMemrefOpOperand());
+    effects.emplace_back(MemoryEffects::Read::get(),
+                         &getIndDstMemrefOpOperand());
 
   // dir_src: memref → Read; fifo.slot → Read + pessimistic clobber Write.
   if (isa<FifoSlotType>(getDirSrc().getType())) {
@@ -726,8 +837,8 @@ void IndDataTransferOp::getEffects(
 
   // dir_dst: memref → Write; fifo.slot → Write.
   if (isa<FifoSlotType>(getDirDst().getType())) {
-    effects.emplace_back(MemoryEffects::Write::get(), &getDirDstMutable(),
-                         0, false, FifoResource::get());
+    effects.emplace_back(MemoryEffects::Write::get(), &getDirDstMutable(), 0,
+                         false, FifoResource::get());
   } else {
     effects.emplace_back(MemoryEffects::Write::get(), &getDirDstMutable());
   }

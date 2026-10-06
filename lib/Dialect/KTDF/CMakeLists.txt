@@ -1,3 +1,4 @@
+add_subdirectory(Analysis)
 add_subdirectory(Transforms)
 
 add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFDialect

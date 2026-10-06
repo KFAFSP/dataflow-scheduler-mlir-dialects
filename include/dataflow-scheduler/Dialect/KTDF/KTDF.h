@@ -23,11 +23,13 @@
 #ifndef DATAFLOW_SCHEDULER_DIALECT_KTDF_KTDF_H_
 #define DATAFLOW_SCHEDULER_DIALECT_KTDF_KTDF_H_
 
+#include <llvm/Support/PointerLikeTypeTraits.h>
 #include <mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Interfaces/DestinationStyleOpInterface.h>
+#include <mlir/Interfaces/InferTypeOpInterface.h>
 #include <mlir/Interfaces/LoopLikeInterface.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
@@ -46,64 +48,138 @@ struct FifoResource : public mlir::SideEffects::Resource::Base<FifoResource> {
 #define GET_OP_CLASSES
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h.inc"
 
+template <>
+struct llvm::PointerLikeTypeTraits<mlir::ktdf::StageOp>
+    : PointerLikeTypeTraits<mlir::Operation*> {
+  [[nodiscard]] static auto getFromVoidPointer(void* ptr)
+      -> mlir::ktdf::StageOp {
+    return mlir::ktdf::StageOp::getFromOpaquePointer(ptr);
+  }
+};
+
 namespace mlir::ktdf {
 
-/// RAII helper that allows moving code to a PrivateOp in a PipelineOp.
+using Token = TypedValue<TokenType>;
+using FifoSlot = TypedValue<FifoSlotType>;
+
+/// RAII helper that allows moving code to a PrivateOp.
 ///
-/// Users may call `makePrivate` on operations to attempt making them private
-/// to the pipeline. The move is deferred until the helper is destroyed. The
-/// helper allows for both hoisting and sinking of ops into the PrivateOp.
-class PipelinePrivatizer {
+/// Users may call `tryMakePrivate` on ops to attempt making them private. The
+/// updating of the PrivateOp is deffered until the `build()` method is called
+/// or the helper is destroyed. The resulting PrivateOp is in canonical form.
+///
+/// Alternatively, private operations may be inserted by using this instance
+/// as the builder argument to `create`. Changing the insertion block, however,
+/// leads to undefined behavior.
+class PrivateBuilder : public ImplicitLocOpBuilder {
  public:
-  /// Canonicalizes the PrivateOp of @p op .
+  /// Canonicalizes @p op .
   ///
   /// - Results without users are dropped.
   /// - Values yielded multiple times are coalesced into one result.
   /// - External yielded values replace their results.
   /// - If the resulting PrivateOp is empty, it is erased.
-  static void canonicalize(RewriterBase& rewriter, PipelineOp op) {
-    PipelinePrivatizer(rewriter, op, true);
+  static void canonicalize(RewriterBase& rewriter, PrivateOp op) {
+    op = PrivateBuilder(op, rewriter.getListener()).build();
+    if (op.getBody()->without_terminator().empty()) {
+      rewriter.eraseOp(op);
+    }
+  }
+  /// Canonicalizes the PrivateOp of @p pipeline , if any.
+  ///
+  /// See canonicalize(RewriterBase&, PrivateOp) for more details.
+  static void canonicalize(RewriterBase& rewriter, PipelineOp pipeline) {
+    if (auto existing = pipeline.getPrivateOp(); existing) {
+      canonicalize(rewriter, existing);
+    }
   }
 
-  /// Creates a PipelinePrivatizer for @p pipeline .
-  ///
-  /// If @p force_recreate is `true`, any existing PrivateOp will be re-created
-  /// in its canonical form, even if no modifications are made.
-  explicit PipelinePrivatizer(RewriterBase& rewriter, PipelineOp pipeline,
-                              bool force_recreate = false);
-  ~PipelinePrivatizer();
+  /// Initializes a builder for @p existing .
+  explicit PrivateBuilder(PrivateOp existing,
+                          OpBuilder::Listener* listener = nullptr);
+  /// Initializes a builder for @p pipeline , inserting a PrivateOp if needed.
+  explicit PrivateBuilder(PipelineOp pipeline,
+                          std::optional<Location> loc = std::nullopt,
+                          OpBuilder::Listener* listener = nullptr);
+  /// Initializes a builder for @p pipeline , inserting a PrivateOp if needed.
+  explicit PrivateBuilder(const OpBuilder& builder, PipelineOp pipeline,
+                          std::optional<Location> loc = std::nullopt)
+      : PrivateBuilder(pipeline, loc, builder.getListener()) {}
+  /// Initializes a builder for @p pipeline , inserting a PrivateOp if needed.
+  explicit PrivateBuilder(const ImplicitLocOpBuilder& builder,
+                          PipelineOp pipeline)
+      : PrivateBuilder(pipeline, builder.getLoc(), builder.getListener()) {}
 
-  PipelinePrivatizer(PipelinePrivatizer&&) = delete;
-  PipelinePrivatizer(const PipelinePrivatizer&) = delete;
+  /// Ensures the PrivateOp is built.
+  virtual ~PrivateBuilder() { build(); }
 
-  auto operator=(PipelinePrivatizer&&) = delete;
-  auto operator=(const PipelinePrivatizer&) = delete;
+  PrivateBuilder(PrivateBuilder&&) = delete;
+  PrivateBuilder(const PrivateBuilder&) = delete;
+  auto operator=(PrivateBuilder&&) = delete;
+  auto operator=(const PrivateBuilder&) = delete;
 
-  /// Determines whether @p block will be within the PrivateOp.
-  [[nodiscard]] auto isPrivate(Block* block) -> bool;
-  /// Determines whether @p op will be within the PrivateOp.
-  [[nodiscard]] auto isPrivate(Operation* op) -> bool {
+  // Changing the insertion block leads to undefined behavior.
+  void setInsertionPoint() = delete;
+  void setInsertionPointAfter() = delete;
+  void setInsertionPointToStart() = delete;
+  void setInsertionPointToEnd() = delete;
+  void setInsertionPointAfterValue() = delete;
+  void clearInsertionPoint() = delete;
+  void restoreInsertionPoint() = delete;
+
+  /// Determines whether @p block is in the PrivateOp.
+  [[nodiscard]] auto isPrivate(Block* block) const -> bool {
+    return block == getInsertionBlock();
+  }
+  /// Determines whether @p op is in the PrivateOp.
+  [[nodiscard]] auto isPrivate(Operation* op) const -> bool {
     return isPrivate(op->getBlock());
   }
 
-  /// Attempts to make @p op a private result.
+  /// Determines whether @p op can be moved into the PrivateOp.
+  ///
+  /// Checks whether it is legal to hoist @p op out of its current scope and
+  /// then sink it into the PrivateOp.
+  [[nodiscard]] virtual auto canPrivate(Operation* op) const -> bool;
+
+  /// Moves @p op into the PrivateOp.
+  ///
+  /// @pre  `canPrivate(op)`
+  virtual void makePrivate(Operation* op);
+
+  /// Attempts to move @p op into the PrivateOp.
   ///
   /// Privating fails if the SSA property would be broken by moving @p op :
-  /// - If @p op is defined inside the pipeline, it may not be nested within an
-  ///   isolated region, and its operand definitions must reach the pipeline.
-  /// - If @p op is defined outside the pipeline, it must not have any users
-  ///   outside the pipeline.
+  /// - @p op may not have users that can't access the PrivateOp results.
+  /// - @p op may not hold uses that aren't available in the PrivateOp.
   ///
   /// @return Whether @p op was privated.
-  auto makePrivate(Operation* op) -> LogicalResult;
+  auto tryMakePrivate(Operation* op) -> LogicalResult {
+    if (isPrivate(op)) {
+      return success();
+    }
+    if (canPrivate(op)) {
+      makePrivate(op);
+      return success();
+    }
+    return failure();
+  }
 
- private:
-  RewriterBase& rewriter_;
-  PipelineOp pipeline_;
-  PrivateOp existing_;
+  /// Creates a new private token.
+  [[nodiscard]] auto createToken(std::optional<Location> loc = std::nullopt)
+      -> Token;
+  /// Creates a new private FIFO.
+  [[nodiscard]] auto createFifo(ArrayRef<FifoSlotType> slots,
+                                ValueRange dynamic_sizes = {},
+                                std::optional<Location> loc = std::nullopt)
+      -> ValueRange;
 
-  /// Unlinked accumulator for operations to be privated on destruction.
-  Block private_;
+  /// Builds the PrivateOp.
+  ///
+  /// Applies all deferred modifications to the IR and finalizes the result.
+  /// The PrivateBuilder is left in a state as if it was re-initialized on the
+  /// resulting operation.
+  auto build() -> PrivateOp;
 };
 
 }  // namespace mlir::ktdf
