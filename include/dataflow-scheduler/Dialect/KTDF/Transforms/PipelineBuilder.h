@@ -152,7 +152,7 @@ class PipelineBuilder : protected ImplicitLocOpBuilder {
   /// Applies all deferred modifications to the IR and finalizes the result.
   /// The PipelineBuilder is left in a state as if it was re-initialized on the
   /// resulting operation.
-  virtual auto build() -> PipelineOp;
+  auto build() -> PipelineOp;
 
   //===--------------------------------------------------------------------===//
   // Stage Building
