@@ -178,8 +178,11 @@ class PrivateBuilder : public ImplicitLocOpBuilder {
   ///
   /// Applies all deferred modifications to the IR and finalizes the result.
   /// The PrivateBuilder is left in a state as if it was re-initialized on the
-  /// resulting operation.
+  /// resulting operation. Returns `nullptr` once the PrivateOp was erased.
   auto build() -> PrivateOp;
+
+  /// Erases the PrivateOp. Nothing can be inserted afterwards.
+  void erase();
 };
 
 }  // namespace mlir::ktdf

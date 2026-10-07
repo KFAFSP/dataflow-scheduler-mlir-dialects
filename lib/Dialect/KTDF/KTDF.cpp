@@ -69,7 +69,7 @@ auto PrivateBuilder::canPrivate(Operation* op) const -> bool {
       return true;
     }
     for (auto* parent = user->getParentOp(); parent;
-         parent = user->getParentOp()) {
+         parent = parent->getParentOp()) {
       if (parent->mightHaveTrait<OpTrait::IsIsolatedFromAbove>()) {
         return false;
       }
@@ -124,6 +124,9 @@ auto PrivateBuilder::createFifo(ArrayRef<FifoSlotType> slots,
 auto PrivateBuilder::build() -> PrivateOp {
   IRRewriter rewriter(*this);
   auto* block = getInsertionBlock();
+  if (block == nullptr) {
+    return nullptr;
+  }
 
   // Redirect all yielded results back to their definitions, since we might
   // need to re-create the PrivateOp.
@@ -181,4 +184,14 @@ auto PrivateBuilder::build() -> PrivateOp {
   rewriter.replaceUsesWithIf(yield_values, result.getResults(),
                              is_outside_private);
   return result;
+}
+
+void PrivateBuilder::erase() {
+  auto* block = getInsertionBlock();
+  if (block == nullptr) {
+    return;
+  }
+
+  OpBuilder::clearInsertionPoint();
+  IRRewriter(*this).eraseOp(block->getParentOp());
 }

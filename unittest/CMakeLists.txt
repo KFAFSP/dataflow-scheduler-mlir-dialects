@@ -13,6 +13,7 @@ FetchContent_MakeAvailable(doctest)
 include(${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake)
 
 add_executable(dataflow-scheduler-dialects-tests
+  Dialect/KTDF/Transforms/PipelineBuilder.cpp
   Dialect/KTDFArch/Analysis/DeviceManager.cpp
   Dialect/KTDFArch/Analysis/NodeLinks.cpp
   Dialect/KTDFArch/Analysis/Query.cpp
@@ -27,6 +28,7 @@ add_executable(dataflow-scheduler-dialects-tests
 target_link_libraries(dataflow-scheduler-dialects-tests
   doctest::doctest
   DataflowSchedulerDialects::KTDFArchAnalysis
+  DataflowSchedulerDialects::KTDFTransforms
   dataflow-scheduler-dialects-tests-exemplar
 )
 target_include_directories(dataflow-scheduler-dialects-tests PRIVATE

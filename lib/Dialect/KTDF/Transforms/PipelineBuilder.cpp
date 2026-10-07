@@ -154,8 +154,8 @@ auto PipelineBuilder::getWriteBuilder(StageOp stage) -> OpBuilder {
 auto PipelineBuilder::build() -> PipelineOp {
   // Build the PrivateOp and erase it if it's empty.
   if (auto private_op = private_builder_.build();
-      private_op.getBody()->without_terminator().empty()) {
-    IRRewriter(*this).eraseOp(private_op);
+      private_op && private_op.getBody()->without_terminator().empty()) {
+    private_builder_.erase();
   }
 
   return cast<PipelineOp>(getInsertionBlock()->getParentOp());
@@ -166,7 +166,7 @@ namespace {
 /// Gets the stage @p op is in inside @p pipeline , if any.
 [[nodiscard]] auto getStage(Block* pipeline, Operation* op) -> StageOp {
   for (auto stage = op->getParentOfType<StageOp>(); stage;
-       stage = op->getParentOfType<StageOp>()) {
+       stage = stage->getParentOfType<StageOp>()) {
     if (stage->getBlock() == pipeline) {
       return stage;
     }
@@ -502,7 +502,13 @@ void PipelineBuilder::insert(ArrayRef<Operation*> ops, PlacementFn placement_fn,
     const auto placement = placement_fn(*this, op);
     if (!placement || failed(insert(op, placement))) {
       if (placement && placement.erase_on_failure) {
-        rewriter.eraseOp(placement.stage);
+        // A later placement for the same units must not find the erased stage.
+        auto stage = placement.stage;
+        if (auto units = stage.getApplicableUnitsAttr();
+            units && units_to_stage_.lookup(units) == stage) {
+          units_to_stage_.erase(units);
+        }
+        rewriter.eraseOp(stage);
       }
       continue;
     }
