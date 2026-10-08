@@ -68,6 +68,7 @@ add_custom_target(dataflow-scheduler-dialects-capi)
 add_custom_target(dataflow-scheduler-dialects-doc)
 # Build all generated include targets.
 add_custom_target(dataflow-scheduler-dialects-headers)
+add_dependencies(dataflow-scheduler-dialects-headers mlir-headers)
 
 #
 # Derived variables

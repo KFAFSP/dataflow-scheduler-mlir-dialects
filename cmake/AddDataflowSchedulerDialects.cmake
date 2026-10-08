@@ -74,7 +74,10 @@ macro(add_dataflow_scheduler_dialects_tool name)
     set(EXCLUDE_FROM_ALL ON)
   endif()
 
-  add_llvm_executable(${name} ${ARG_UNPARSED_ARGUMENTS})
+  add_llvm_executable(${name} 
+    ${ARG_UNPARSED_ARGUMENTS} 
+    DEPENDS dataflow-scheduler-dialects-headers
+  )
 
   if(DataflowSchedulerDialects_BUILD_TOOLS AND ARG_EXPORT_NAME)
     # To unify the interface for all consumers, create an alias target.
@@ -95,6 +98,7 @@ function(add_dataflow_scheduler_dialects_library name)
 
   add_mlir_library(${name} 
     ${ARG_UNPARSED_ARGUMENTS}
+    DEPENDS dataflow-scheduler-dialects-headers
     ENABLE_AGGREGATION
     DISABLE_INSTALL 
     EXCLUDE_FROM_LIBMLIR
