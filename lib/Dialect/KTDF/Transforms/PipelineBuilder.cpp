@@ -353,6 +353,8 @@ enum class ForwardingResult : char {
     auto consumer_stage = getStage(stage->getBlock(), user);
     if (!consumer_stage) {
       // The user is not within the same pipeline.
+      LDBG() << "  (FAILED) user of result #" << result.getResultNumber()
+             << " isn't in the pipeline";
       return ForwardingResult::Failure;
     }
     if (consumer_stage == stage) {
