@@ -120,7 +120,7 @@ struct DefaultMappable : Mappable::ExternalModel<DefaultMappable, Operation*> {
 }  // namespace
 
 auto Mappable::classof(Operation* op) -> bool {
-  return !isa<KTDFArchDialect>(op->getDialect()) &&
+  return op->isRegistered() && !isa<KTDFArchDialect>(op->getDialect()) &&
          op->getParentOfType<DeviceOp>() == nullptr;
 }
 
