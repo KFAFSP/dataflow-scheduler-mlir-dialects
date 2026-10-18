@@ -30,96 +30,80 @@ using namespace mlir::ktdf;
 // ConsumerIterator
 //===----------------------------------------------------------------------===//
 
-ConsumerEdgeIterator::ConsumerEdgeIterator(StageOp stage)
-    : operand_(stage.getDependsOutMutable().begin()) {
-  if (operand_ != stage.getDependsOutMutable().end()) {
-    const auto end = operand_->get().use_end();
+ConsumerEdgeIterator::ConsumerEdgeIterator(StageOp stage) {
+  if (auto deps = stage.getDependsOutMutable(); !deps.empty()) {
+    operand_ = deps.begin();
     use_ = operand_->get().use_begin();
-    if (use_ != end) {
+    seek();
+  }
+}
+
+auto ConsumerEdgeIterator::operator++() -> ConsumerEdgeIterator& {
+  assert(operand_);
+  ++use_;
+  seek();
+  return *this;
+}
+
+void ConsumerEdgeIterator::seek() {
+  auto* const end =
+      cast<StageOp>(operand_->getOwner()).getDependsOutMutable().end();
+  while (true) {
+    for (const auto use_end = operand_->get().use_end(); use_ != use_end;
+         ++use_) {
       if (auto stage = dyn_cast<StageOp>(use_->getOwner());
           stage && stage.isInDependency(*use_)) {
         return;
       }
     }
 
-    ++*this;
-  }
-}
-
-auto ConsumerEdgeIterator::operator++() -> ConsumerEdgeIterator& {
-  const auto advance_use = [&]() -> bool {
-    const auto end = use_->get().use_end();
-    while (++use_ != end) {
-      if (auto stage = dyn_cast<StageOp>(use_->getOwner());
-          stage && stage.isInDependency(*use_)) {
-        return true;
-      }
+    if (++operand_ == end) {
+      break;
     }
-
-    return false;
-  };
-
-  if (!advance_use()) {
-    auto* const end =
-        cast<StageOp>(operand_->getOwner()).getDependsOutMutable().end();
-    while (++operand_ != end) {
-      use_ = operand_->get().use_begin();
-      if (advance_use()) {
-        break;
-      }
-    }
-    use_ = {};
+    use_ = operand_->get().use_begin();
   }
 
-  return *this;
+  *this = ConsumerEdgeIterator();
 }
 
 //===----------------------------------------------------------------------===//
 // ProducerIterator
 //===----------------------------------------------------------------------===//
 
-ProducerEdgeIterator::ProducerEdgeIterator(StageOp stage)
-    : operand_(stage.getDependsInMutable().begin()) {
-  if (operand_ != stage.getDependsInMutable().end()) {
-    const auto end = operand_->get().use_end();
+ProducerEdgeIterator::ProducerEdgeIterator(StageOp stage) {
+  if (auto deps = stage.getDependsInMutable(); !deps.empty()) {
+    operand_ = deps.begin();
     use_ = operand_->get().use_begin();
-    if (use_ != end) {
+    seek();
+  }
+}
+
+auto ProducerEdgeIterator::operator++() -> ProducerEdgeIterator& {
+  assert(operand_);
+  ++use_;
+  seek();
+  return *this;
+}
+
+void ProducerEdgeIterator::seek() {
+  auto* const end =
+      cast<StageOp>(operand_->getOwner()).getDependsInMutable().end();
+  while (true) {
+    for (const auto use_end = operand_->get().use_end(); use_ != use_end;
+         ++use_) {
       if (auto stage = dyn_cast<StageOp>(use_->getOwner());
           stage && stage.isOutDependency(*use_)) {
         return;
       }
     }
 
-    ++*this;
-  }
-}
-
-auto ProducerEdgeIterator::operator++() -> ProducerEdgeIterator& {
-  const auto advance_use = [&]() -> bool {
-    const auto end = use_->get().use_end();
-    while (++use_ != end) {
-      if (auto stage = dyn_cast<StageOp>(use_->getOwner());
-          stage && stage.isOutDependency(*use_)) {
-        return true;
-      }
+    if (++operand_ == end) {
+      break;
     }
-
-    return false;
-  };
-
-  if (!advance_use()) {
-    auto* const end =
-        cast<StageOp>(operand_->getOwner()).getDependsInMutable().end();
-    while (++operand_ != end) {
-      use_ = operand_->get().use_begin();
-      if (advance_use()) {
-        break;
-      }
-    }
-    use_ = {};
+    use_ = operand_->get().use_begin();
   }
 
-  return *this;
+  *this = ProducerEdgeIterator();
 }
 
 //===----------------------------------------------------------------------===//
