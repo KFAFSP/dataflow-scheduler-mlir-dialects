@@ -34,14 +34,14 @@ struct ConsumerEdgeIterator
   [[nodiscard]] static auto begin(StageOp stage) -> ConsumerEdgeIterator {
     return ConsumerEdgeIterator(stage);
   }
-  [[nodiscard]] static auto end(StageOp stage) -> ConsumerEdgeIterator {
-    return ConsumerEdgeIterator(stage.getDependsInMutable().end());
+  [[nodiscard]] static auto end(StageOp /*stage*/) -> ConsumerEdgeIterator {
+    return ConsumerEdgeIterator();
   }
 
   explicit ConsumerEdgeIterator() = default;
   explicit ConsumerEdgeIterator(StageOp stage);
 
-  explicit operator bool() const { return use_.getOperand() != nullptr; }
+  explicit operator bool() const { return operand_ != nullptr; }
 
   auto operator++() -> ConsumerEdgeIterator&;
 
@@ -55,7 +55,8 @@ struct ConsumerEdgeIterator
   }
 
  private:
-  explicit ConsumerEdgeIterator(mlir::OpOperand* operand) : operand_(operand) {}
+  /// Advances to the first edge at or after the current use.
+  void seek();
 
   mlir::OpOperand* operand_ = nullptr;
   mlir::Value::use_iterator use_;
@@ -87,14 +88,14 @@ struct ProducerEdgeIterator
   [[nodiscard]] static auto begin(StageOp stage) -> ProducerEdgeIterator {
     return ProducerEdgeIterator(stage);
   }
-  [[nodiscard]] static auto end(StageOp stage) -> ProducerEdgeIterator {
-    return ProducerEdgeIterator(stage.getDependsInMutable().end());
+  [[nodiscard]] static auto end(StageOp /*stage*/) -> ProducerEdgeIterator {
+    return ProducerEdgeIterator();
   }
 
   explicit ProducerEdgeIterator() = default;
   explicit ProducerEdgeIterator(StageOp stage);
 
-  explicit operator bool() const { return use_.getOperand() != nullptr; }
+  explicit operator bool() const { return operand_ != nullptr; }
 
   auto operator++() -> ProducerEdgeIterator&;
 
@@ -108,7 +109,8 @@ struct ProducerEdgeIterator
   }
 
  private:
-  explicit ProducerEdgeIterator(mlir::OpOperand* operand) : operand_(operand) {}
+  /// Advances to the first edge at or after the current use.
+  void seek();
 
   mlir::OpOperand* operand_ = nullptr;
   mlir::Value::use_iterator use_;
