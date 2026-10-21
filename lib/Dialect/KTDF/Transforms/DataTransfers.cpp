@@ -79,6 +79,15 @@ struct ReshapeOp : mlir::Op<ReshapeOp> {
   return value.getParentRegion()->isProperAncestor(user->getParentRegion());
 }
 
+/// Determines whether @p user can use @p mixed .
+[[nodiscard]] auto areAvailable(ArrayRef<OpFoldResult> mixed, Operation* user)
+    -> bool {
+  return llvm::all_of(mixed, [&](OpFoldResult item) -> bool {
+    const auto value = dyn_cast<Value>(item);
+    return !value || isAvailable(value, user);
+  });
+}
+
 /// Forwards @p mixed only if it is available at @p user .
 [[nodiscard]] auto ensureAvailable(OpFoldResult mixed, Operation* user)
     -> OpFoldResult {
@@ -481,11 +490,111 @@ struct FoldDataTransferRelay : OpRewritePattern<DataTransferOp> {
   }
 };
 
+/// Folds a `tensor.extract_slice` of a `ktdf.read_from_fifo` into the write.
+struct FoldExtractSliceIntoFifoRead : OpRewritePattern<tensor::ExtractSliceOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  auto matchAndRewrite(tensor::ExtractSliceOp extract,
+                       PatternRewriter& rewriter) const
+      -> LogicalResult override {
+    auto read = extract.getSource().getDefiningOp<ReadFromFifoOp>();
+    if (!read || !read->hasOneUse()) {
+      return rewriter.notifyMatchFailure(extract, "not the only use of a read");
+    }
+    if (read.getSplat()) {
+      return rewriter.notifyMatchFailure(read, "read splats");
+    }
+    if (!extract.getType().hasStaticShape()) {
+      return rewriter.notifyMatchFailure(extract, "dynamic slice");
+    }
+    auto alloc = FifoSlotAllocation::get(read.getFifoSlot());
+    if (!alloc || alloc.getConsumer() != &read.getFifoSlotMutable()) {
+      return rewriter.notifyMatchFailure(read, "unknown slot allocation");
+    }
+    auto* const producer = alloc.getProducer();
+    auto write =
+        producer ? dyn_cast<WriteToFifoOp>(producer->getOwner()) : nullptr;
+    if (!write || write.getData().getType() != read.getType()) {
+      return rewriter.notifyMatchFailure(read, "not written as read");
+    }
+    if (!areAvailable(extract.getMixedOffsets(), write) ||
+        !areAvailable(extract.getMixedStrides(), write)) {
+      return rewriter.notifyMatchFailure(extract, "slice not available");
+    }
+
+    rewriter.setInsertionPoint(write);
+    auto sliced = tensor::ExtractSliceOp::create(
+        rewriter, extract.getLoc(), extract.getType(), write.getData(),
+        extract.getMixedOffsets(), extract.getMixedSizes(),
+        extract.getMixedStrides());
+    rewriter.modifyOpInPlace(write,
+                             [&]() { write.getDataMutable().assign(sliced); });
+    alloc.resize(rewriter,
+                 rewriter.getIndexAttr(extract.getType().getNumElements()));
+    rewriter.modifyOpInPlace(
+        read, [&]() { read.getResult().setType(extract.getType()); });
+    rewriter.replaceOp(extract, read.getResult());
+    return success();
+  }
+};
+
+/// Folds a `tensor.insert_slice` into a `tensor.empty` into the read.
+struct FoldInsertSliceIntoFifoWrite : OpRewritePattern<WriteToFifoOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  auto matchAndRewrite(WriteToFifoOp write, PatternRewriter& rewriter) const
+      -> LogicalResult override {
+    auto insert = write.getData().getDefiningOp<tensor::InsertSliceOp>();
+    if (!insert || !insert->hasOneUse() ||
+        !insert.getDest().getDefiningOp<tensor::EmptyOp>()) {
+      return rewriter.notifyMatchFailure(write, "not a slice into an empty");
+    }
+    if (!insert.getSourceType().hasStaticShape() ||
+        !insert.getDestType().hasStaticShape()) {
+      return rewriter.notifyMatchFailure(insert, "dynamic slice");
+    }
+    auto alloc = FifoSlotAllocation::get(write.getFifoSlot());
+    if (!alloc || alloc.getProducer() != &write.getFifoSlotMutable()) {
+      return rewriter.notifyMatchFailure(write, "unknown slot allocation");
+    }
+    auto* const consumer = alloc.getConsumer();
+    auto read =
+        consumer ? dyn_cast<ReadFromFifoOp>(consumer->getOwner()) : nullptr;
+    if (!read || read.getSplat() || read.getType() != insert.getDestType()) {
+      return rewriter.notifyMatchFailure(write, "not read as written");
+    }
+    if (!areAvailable(insert.getMixedOffsets(), read) ||
+        !areAvailable(insert.getMixedStrides(), read)) {
+      return rewriter.notifyMatchFailure(insert, "slice not available");
+    }
+
+    rewriter.modifyOpInPlace(
+        write, [&]() { write.getDataMutable().assign(insert.getSource()); });
+    alloc.resize(rewriter, rewriter.getIndexAttr(
+                               insert.getSourceType().getNumElements()));
+    rewriter.modifyOpInPlace(
+        read, [&]() { read.getResult().setType(insert.getSourceType()); });
+
+    rewriter.setInsertionPointAfter(read);
+    auto empty = tensor::EmptyOp::create(rewriter, insert.getLoc(),
+                                         insert.getDestType().getShape(),
+                                         insert.getDestType().getElementType());
+    auto inserted = tensor::InsertSliceOp::create(
+        rewriter, insert.getLoc(), read.getResult(), empty,
+        insert.getMixedOffsets(), insert.getMixedSizes(),
+        insert.getMixedStrides());
+    rewriter.replaceAllUsesExcept(read.getResult(), inserted, inserted);
+    rewriter.eraseOp(insert);
+    return success();
+  }
+};
+
 }  // namespace
 
 void mlir::ktdf::populateDataMovementCoalescingPatterns(
     RewritePatternSet& patterns) {
   patterns.add<FoldReshapeIntoFifoRead, FoldReshapeIntoFifoWrite,
-               FoldProducerIntoFifoRead, FoldDataTransferRelay>(
+               FoldProducerIntoFifoRead, FoldDataTransferRelay,
+               FoldExtractSliceIntoFifoRead, FoldInsertSliceIntoFifoWrite>(
       patterns.getContext());
 }

@@ -137,6 +137,8 @@ struct FifoSlotAllocation : OpResult {
 ///  - Folds `tensor.(collapse|expand)_shape` into `ktdf.read_from_fifo`.
 ///  - Folds `tensor.(collapse|expand)_shape` into `ktdf.write_to_fifo`.
 ///  - Folds the producer into a `ktdf.read_from_fifo`.
+///  - Folds `tensor.extract_slice` of a `ktdf.read_from_fifo` into the write.
+///  - Folds `tensor.insert_slice` into a `ktdf.write_to_fifo` into the read.
 ///  - Folds two `ktdf.data_transfer` ops together.
 void populateDataMovementCoalescingPatterns(RewritePatternSet& patterns);
 
