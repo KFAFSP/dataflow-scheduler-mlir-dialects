@@ -19,11 +19,14 @@
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/Sequence.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <optional>
@@ -32,6 +35,34 @@
 
 using namespace mlir;
 using namespace mlir::ktdf;
+
+auto mlir::ktdf::getPrivateDefinition(Value value) -> OpResult {
+  auto source = dyn_cast<OpResult>(value);
+  while (source) {
+    auto private_op = dyn_cast<PrivateOp>(source.getDefiningOp());
+    if (!private_op) {
+      return source;
+    }
+
+    source = dyn_cast<OpResult>(
+        private_op.getYieldOp().getOperand(source.getResultNumber()));
+  }
+
+  return nullptr;
+}
+
+auto mlir::ktdf::getPrivateUses(Value value) -> Value::use_range {
+  while (true) {
+    const auto uses = value.getUses();
+    if (uses.empty() || std::next(uses.begin()) != uses.end() ||
+        !isa<PrivateYieldOp>(uses.begin()->getOwner())) {
+      return uses;
+    }
+
+    value = uses.begin()->getOwner()->getParentOp()->getResult(
+        uses.begin()->getOperandNumber());
+  }
+}
 
 //===----------------------------------------------------------------------===//
 // PrivateBuilder

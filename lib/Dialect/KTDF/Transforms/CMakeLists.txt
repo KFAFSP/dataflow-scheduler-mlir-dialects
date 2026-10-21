@@ -1,5 +1,6 @@
 add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFTransforms
     CodeMotion.cpp
+    DataTransfers.cpp
     PipelineBuilder.cpp
 
   ADDITIONAL_HEADER_DIRS
@@ -12,4 +13,9 @@ add_dataflow_scheduler_dialects_library(DataflowSchedulerDialectsKTDFTransforms
   LINK_LIBS PUBLIC
     DataflowSchedulerDialectsKTDFDialect
     DataflowSchedulerDialectsKTDFAnalysis
+
+  LINK_MLIR_LIBS
+    MLIRAffineDialect
+    MLIRMemRefDialect
+    MLIRTensorDialect
 )

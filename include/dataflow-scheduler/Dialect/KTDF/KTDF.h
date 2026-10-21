@@ -27,6 +27,7 @@
 #include <mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Interfaces/DestinationStyleOpInterface.h>
 #include <mlir/Interfaces/InferTypeOpInterface.h>
@@ -58,6 +59,18 @@ struct llvm::PointerLikeTypeTraits<mlir::ktdf::StageOp>
 };
 
 namespace mlir::ktdf {
+
+/// Follows `ktdf.private` definitions and then gets the definition.
+///
+/// If @p value is defined by a `ktdf.private` op, finds the definition of
+/// the yielded operand. Returns `nullptr` if the definition is an argument.
+[[nodiscard]] auto getPrivateDefinition(Value value) -> OpResult;
+
+/// Follows single `ktdf.private_yield` uses and then gets all uses.
+///
+/// If @p value is only used by a `ktdf.private_yield` op, finds the users of
+/// the yielded result. Otherwise, returns all uses of @p value.
+[[nodiscard]] auto getPrivateUses(Value value) -> Value::use_range;
 
 using Token = TypedValue<TokenType>;
 using FifoSlot = TypedValue<FifoSlotType>;

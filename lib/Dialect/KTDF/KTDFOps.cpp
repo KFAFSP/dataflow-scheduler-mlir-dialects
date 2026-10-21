@@ -31,6 +31,9 @@
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Attributes.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/ValueRange.h>
@@ -347,15 +350,111 @@ auto FifoAllocateOp::verify() -> LogicalResult {
   return success();
 }
 
-void FifoAllocateOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                                 MLIRContext*) {
-  results.add(
-      +[](FifoAllocateOp op, PatternRewriter& rewriter) -> LogicalResult {
-        if (op->getUses().empty()) {
-          rewriter.eraseOp(op);
+namespace {
+
+struct DropUnusedSlots : OpRewritePattern<FifoAllocateOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  auto matchAndRewrite(FifoAllocateOp op, PatternRewriter& rewriter) const
+      -> LogicalResult override {
+    SmallVector<Value> dynamic_sizes;
+    SmallVector<Type> result_types;
+    auto changed = false;
+    unsigned dynamic_size = 0;
+    for (auto result : op->getResults()) {
+      const auto result_type = cast<FifoSlotType>(result.getType());
+      const auto size = result_type.isDynamicNumElements()
+                            ? op.getDynamicSizes()[dynamic_size++]
+                            : Value{};
+      if (result.use_empty()) {
+        changed |= true;
+        continue;
+      }
+
+      result_types.push_back(result_type);
+      if (size) {
+        dynamic_sizes.push_back(size);
+      }
+    }
+    if (!changed) {
+      return failure();
+    }
+
+    if (!result_types.empty()) {
+      auto new_alloc = FifoAllocateOp::create(rewriter, op.getLoc(),
+                                              result_types, dynamic_sizes);
+      unsigned result_number = 0;
+      for (auto result : op.getResults()) {
+        if (result.use_empty()) {
+          continue;
         }
-        return success();
-      });
+        rewriter.replaceAllUsesWith(result,
+                                    new_alloc->getResult(result_number++));
+      }
+    }
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+}  // namespace
+
+void FifoAllocateOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                                 MLIRContext* context) {
+  results.add<DropUnusedSlots>(context);
+}
+
+auto FifoAllocateOp::getMixedSize(unsigned slot) -> OpFoldResult {
+  assert(slot < getNumResults());
+
+  unsigned dynamic_size = 0;
+  for (auto [index, type] : llvm::enumerate(getResultTypes())) {
+    const auto result_type = cast<FifoSlotType>(type);
+    if (index == slot) {
+      return result_type.isDynamicNumElements()
+                 ? getDynamicSizes()[dynamic_size]
+                 : mlir::getAsIndexOpFoldResult(getContext(),
+                                                result_type.getNumElements());
+    }
+    if (result_type.isDynamicNumElements()) {
+      ++dynamic_size;
+    }
+  }
+
+  llvm_unreachable("slot out of range");
+}
+
+void FifoAllocateOp::resize(unsigned slot, OpFoldResult num_elements) {
+  assert(slot < getNumResults());
+
+  const auto static_size =
+      getConstantIntValue(num_elements).value_or(ShapedType::kDynamic);
+
+  unsigned dynamic_size = 0;
+  for (auto [index, type] : llvm::enumerate(getResultTypes())) {
+    const auto result_type = cast<FifoSlotType>(type);
+
+    if (index == slot) {
+      if (result_type.isDynamicNumElements()) {
+        if (static_size == ShapedType::kDynamic) {
+          (*this)->setOperand(dynamic_size, cast<Value>(num_elements));
+        } else {
+          (*this)->eraseOperand(dynamic_size);
+        }
+      } else if (static_size == ShapedType::kDynamic) {
+        (*this)->insertOperands(dynamic_size, {cast<Value>(num_elements)});
+      }
+
+      getResult(index).setType(result_type.clone(static_size));
+      return;
+    }
+    if (result_type.isDynamicNumElements()) {
+      ++dynamic_size;
+    }
+  }
+
+  llvm_unreachable("slot out of range");
 }
 
 //===----------------------------------------------------------------------===//
@@ -816,6 +915,16 @@ void DataTransferOp::getEffects(
   }
 }
 
+auto DataTransferOp::hasCopySemantics() -> bool {
+  const auto source = getMixedSourceSizes();
+  const auto dest = getMixedDestSizes();
+  return source.size() == dest.size() &&
+         llvm::all_of(llvm::zip_equal(source, dest), [](auto sizes) {
+           return isEqualConstantIntOrValue(std::get<0>(sizes),
+                                            std::get<1>(sizes));
+         });
+}
+
 //===----------------------------------------------------------------------===//
 // ViaOp
 //===----------------------------------------------------------------------===//
@@ -1096,8 +1205,11 @@ auto verifyFifoReadWrite(FifoSlotType slot, ShapedType shaped,
   }
 
   // Verify total number of elements matches FIFO slot size
+  if (shaped_dynamic) {
+    return success();
+  }
   const auto shaped_elements = shaped.getNumElements();
-  if (!shaped_dynamic && shaped_elements != fifo_elements) {
+  if (shaped_elements != fifo_elements) {
     return emit_error() << "data total elements (" << shaped_elements
                         << ") must match FIFO slot size (" << fifo_elements
                         << ")";

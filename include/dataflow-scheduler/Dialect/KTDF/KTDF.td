@@ -132,7 +132,13 @@ def KTDF_FifoAllocateOp : KTDF_Op<"fifo.allocate"> {
   
   let extraClassDeclaration = [{
     /// Returns the number of FIFO slots being allocated.
-    unsigned getNumSlots() { return getSlots().size(); }
+    [[nodiscard]] auto getNumSlots() -> unsigned { return getSlots().size(); }
+
+    /// Gets the size of @p slot .
+    [[nodiscard]] auto getMixedSize(unsigned slot) -> OpFoldResult;
+
+    /// Sets the size of @p slot to @p num_elements .
+    void resize(unsigned slot, OpFoldResult num_elements);
   }];
 }
 
@@ -759,6 +765,9 @@ def KTDF_DataTransferOp : KTDF_Op<"data_transfer", [
     bool isDestFifo() {
       return llvm::isa<FifoSlotType>(getDestination().getType());
     }
+
+    /// Returns `true` if both sides have the same size.
+    [[nodiscard]] auto hasCopySemantics() -> bool;
 
     /// Returns the transfer type (memref-to-memref, memref-to-fifo, fifo-to-memref)
     enum class TransferType { MemRefToMemRef, MemRefToFifo, FifoToMemRef };

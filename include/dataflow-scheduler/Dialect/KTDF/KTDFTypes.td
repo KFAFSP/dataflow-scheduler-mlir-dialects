@@ -125,13 +125,32 @@ def KTDF_FifoSlotType : KTDF_Type<"FifoSlot", "fifo.slot"> {
   let hasCustomAssemblyFormat = 1;
 
   let extraClassDeclaration = [{
-    /// Returns true if the number of elements is dynamic
-    bool isDynamicNumElements() const {
+    /// Clones this slot type with @p num_elements and @p element_type .
+    [[nodiscard]] auto cloneWith(std::optional<int64_t> num_elements, 
+                                 Type element_type) const -> FifoSlotType {
+      return get(getContext(), getSrc(), getDest(), 
+                 num_elements.value_or(getNumElements()), element_type);
+    }
+    /// Clones this slot type with @p num_elements and @p element_type .
+    [[nodiscard]] auto clone(int64_t num_elements, 
+                             Type element_type) const -> FifoSlotType {
+      return cloneWith(num_elements, element_type);
+    }
+    /// Clones this slot type with @p num_elements .
+    [[nodiscard]] auto clone(int64_t num_elements) const -> FifoSlotType {
+      return clone(num_elements, getElementType());
+    }
+
+    /// Returns true if the number of elements is dynamic.
+    [[nodiscard]] auto isDynamicNumElements() const -> bool {
       return mlir::ShapedType::isDynamic(getNumElements());
     }
     
-    /// Returns the static number of elements, or kDynamic if dynamic
-    int64_t getStaticNumElements() const { return getNumElements(); }
+    /// Returns the static number of elements, aborting if dynamic.
+    [[nodiscard]] auto getStaticNumElements() const -> int64_t {
+      assert(!isDynamicNumElements() && "dynamic num_elements");
+      return getNumElements(); 
+    }
   }];
 }
 
