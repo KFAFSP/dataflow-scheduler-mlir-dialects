@@ -443,9 +443,9 @@ struct FoldDataTransferRelay : OpRewritePattern<DataTransferOp> {
   auto matchAndRewrite(DataTransferOp transfer, PatternRewriter& rewriter) const
       -> LogicalResult override {
     const auto dest_alloc = FifoSlotAllocation::get(transfer.getSource());
-    if (!dest_alloc) {
+    if (transfer.getTransferMode() != TransferMode::Copy || !dest_alloc) {
       return rewriter.notifyMatchFailure(
-          transfer, "requires source FIFO with known allocation");
+          transfer, "requires copy from source FIFO with known allocation");
     }
     auto* const producer = getProducer(dest_alloc, transfer);
     if (!producer) {
@@ -457,9 +457,7 @@ struct FoldDataTransferRelay : OpRewritePattern<DataTransferOp> {
       return rewriter.notifyMatchFailure(producer->getOwner(),
                                          "unable to fold FIFO write");
     }
-    // FIXME: `ktdf.data_transfer` can implicitly splat or pad. Until downstream
-    //        fixes this semantical gap, we need to bail here.
-    if (!hop.hasCopySemantics()) {
+    if (hop.getTransferMode() != TransferMode::Copy) {
       return rewriter.notifyMatchFailure(hop,
                                          "hop does not have copy semantics");
     }

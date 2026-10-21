@@ -766,9 +766,6 @@ def KTDF_DataTransferOp : KTDF_Op<"data_transfer", [
       return llvm::isa<FifoSlotType>(getDestination().getType());
     }
 
-    /// Returns `true` if both sides have the same size.
-    [[nodiscard]] auto hasCopySemantics() -> bool;
-
     /// Returns the transfer type (memref-to-memref, memref-to-fifo, fifo-to-memref)
     enum class TransferType { MemRefToMemRef, MemRefToFifo, FifoToMemRef };
     

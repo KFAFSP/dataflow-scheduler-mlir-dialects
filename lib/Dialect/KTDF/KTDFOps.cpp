@@ -915,16 +915,6 @@ void DataTransferOp::getEffects(
   }
 }
 
-auto DataTransferOp::hasCopySemantics() -> bool {
-  const auto source = getMixedSourceSizes();
-  const auto dest = getMixedDestSizes();
-  return source.size() == dest.size() &&
-         llvm::all_of(llvm::zip_equal(source, dest), [](auto sizes) {
-           return isEqualConstantIntOrValue(std::get<0>(sizes),
-                                            std::get<1>(sizes));
-         });
-}
-
 //===----------------------------------------------------------------------===//
 // ViaOp
 //===----------------------------------------------------------------------===//
