@@ -23,13 +23,13 @@ func.func @transfer_with_affine_subscript() {
 // CHECK:   ktdf.data_transfer
 // CHECK-SAME: from %{{.*}} size [64]
 // CHECK-SAME: to %{{.*}}[%{{.*}}, %{{.*}}, %{{.*}}, 0]
-// CHECK-SAME: size [1, 1, 1, 1]
+// CHECK-SAME: size [1, 1, 1, 64]
 func.func @transfer_with_constant_subscript(%a: index, %b: index, %c: index) {
   %fifo = ktdf.fifo.allocate() -> !ktdf.fifo.slot<"SFU" -> "DDR", 64xf16>
   %B = memref.alloc() : memref<12x1x64x64xf16, "DDR">
   ktdf.data_transfer
     from %fifo size [64]
-    to %B[%a, %b, %c, 0] size [1, 1, 1, 1]
+    to %B[%a, %b, %c, 0] size [1, 1, 1, 64]
     : !ktdf.fifo.slot<"SFU" -> "DDR", 64xf16>, memref<12x1x64x64xf16, "DDR">
   return
 }

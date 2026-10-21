@@ -36,6 +36,8 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
+#include <optional>
+
 using namespace mlir;
 using namespace mlir::ktdf;
 
@@ -605,6 +607,24 @@ void PrivateOp::getSuccessorRegions(RegionBranchPoint point,
 // DataTransferOp
 //===----------------------------------------------------------------------===//
 
+namespace {
+
+/// Returns the number of elements in @p shape , or std::nullopt if dynamic.
+[[nodiscard]] auto getStaticNumElements(ArrayRef<OpFoldResult> shape)
+    -> std::optional<int64_t> {
+  int64_t num_elements = 1;
+  for (const auto size : shape) {
+    const auto value = getConstantIntValue(size);
+    if (!value) {
+      return std::nullopt;
+    }
+    num_elements *= *value;
+  }
+  return num_elements;
+}
+
+}  // namespace
+
 auto DataTransferOp::verify() -> LogicalResult {
   const auto verify_cell = [&](Twine side_name, MemRefType type, AffineMap map,
                                OperandRange indices,
@@ -688,6 +708,27 @@ auto DataTransferOp::verify() -> LogicalResult {
     return failure();
   }
 
+  switch (getTransferMode()) {
+    case TransferMode::Copy: {
+      if (!getStaticSourceSizes() || !getStaticDestSizes()) {
+        // FIXME: Whatever this means, we're not checking it.
+        break;
+      }
+
+      const auto source_elements = getStaticNumElements(getMixedSourceSizes());
+      const auto dest_elements = getStaticNumElements(getMixedDestSizes());
+      if (source_elements && dest_elements &&
+          *source_elements != *dest_elements) {
+        return emitOpError("copy transfer has mismatched sizes");
+      }
+      break;
+    }
+
+    default:
+      // These are always legal.
+      break;
+  }
+
   return success();
 }
 
@@ -712,7 +753,8 @@ void DataTransferOp::build(OpBuilder& builder, OperationState& state,
                            ArrayRef<OpFoldResult> source_sizes,
                            Value destination, AffineMap dest_map,
                            ValueRange dest_indices,
-                           ArrayRef<OpFoldResult> dest_sizes) {
+                           ArrayRef<OpFoldResult> dest_sizes,
+                           TransferMode transfer_mode) {
   SmallVector<Value> dynamic_source_sizes;
   SmallVector<int64_t> static_source_sizes;
   dispatchIndexOpFoldResults(source_sizes, dynamic_source_sizes,
@@ -727,7 +769,8 @@ void DataTransferOp::build(OpBuilder& builder, OperationState& state,
         builder.getDenseI64ArrayAttr(static_source_sizes),
         builder.getDenseI64ArrayAttr(static_dest_sizes),
         source_map ? AffineMapAttr::get(source_map) : AffineMapAttr(),
-        dest_map ? AffineMapAttr::get(dest_map) : AffineMapAttr());
+        dest_map ? AffineMapAttr::get(dest_map) : AffineMapAttr(),
+        transfer_mode);
 }
 
 // Build with all static sizes.
@@ -736,7 +779,8 @@ void DataTransferOp::build(OpBuilder& builder, OperationState& state,
                            ValueRange source_indices,
                            ArrayRef<int64_t> source_sizes, Value destination,
                            AffineMap dest_map, ValueRange dest_indices,
-                           ArrayRef<int64_t> dest_sizes) {
+                           ArrayRef<int64_t> dest_sizes,
+                           TransferMode transfer_mode) {
   const auto source_size_values =
       llvm::map_to_vector(source_sizes, [&](int64_t value) -> OpFoldResult {
         return builder.getI64IntegerAttr(value);
@@ -747,7 +791,7 @@ void DataTransferOp::build(OpBuilder& builder, OperationState& state,
       });
 
   build(builder, state, source, source_map, source_indices, source_size_values,
-        destination, dest_map, dest_indices, dest_size_values);
+        destination, dest_map, dest_indices, dest_size_values, transfer_mode);
 }
 
 void DataTransferOp::getEffects(

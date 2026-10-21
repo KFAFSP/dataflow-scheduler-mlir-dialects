@@ -67,6 +67,25 @@ def KTDF_LoopTypeAttr : EnumAttr<KTDF_Dialect, KTDF_LoopTypeEnum, "loop_type"> {
 }
 
 //===----------------------------------------------------------------------===//
+// TransferModeAttr
+//===----------------------------------------------------------------------===//
+
+def KTDF_TransferModeAttr : EnumAttr<KTDF_Dialect, KTDF_TransferModeEnum, "transfer_mode"> {
+  let summary = "Describes how a data transfer handles size changes";
+  let description = [{
+    The transfer mode describes how a `ktdf.data_transfer` handles moving data
+    between slices of different sizes.
+
+    Example:
+
+    ```mlir
+    TODO
+    ```
+  }];
+  let assemblyFormat = "`<` $value `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // SplatModeAttr
 //===----------------------------------------------------------------------===//
 

@@ -703,14 +703,15 @@ def KTDF_DataTransferOp : KTDF_Op<"data_transfer", [
     OptionalAttr<DenseI64ArrayAttr>:$static_source_sizes,
     OptionalAttr<DenseI64ArrayAttr>:$static_dest_sizes,
     OptionalAttr<AffineMapAttr>:$source_map,
-    OptionalAttr<AffineMapAttr>:$dest_map
+    OptionalAttr<AffineMapAttr>:$dest_map,
+    DefaultValuedAttr<KTDF_TransferModeAttr, "TransferMode::Copy">:$transfer_mode
   );
 
   let hasVerifier = 1;
 
   let assemblyFormat = [{
     `from` custom<CellOrSlot>($source, $source_indices, $source_map, $source_sizes, $static_source_sizes) 
-    `to` custom<CellOrSlot>($destination, $dest_indices, $dest_map, $dest_sizes, $static_dest_sizes) 
+    `to` custom<CellOrSlot>($destination, $dest_indices, $dest_map, $dest_sizes, $static_dest_sizes)
     attr-dict `:` type($source) `,` type($destination)
   }];
 
@@ -720,17 +721,21 @@ def KTDF_DataTransferOp : KTDF_Op<"data_transfer", [
       "ArrayRef<OpFoldResult>":$source_sizes,
       "Value":$destination, "AffineMap":$dest_map,
       "ValueRange":$dest_indices,
-      "ArrayRef<OpFoldResult>":$dest_sizes)>,
+      "ArrayRef<OpFoldResult>":$dest_sizes,
+      CArg<"TransferMode", "TransferMode::Copy">:$transfer_mode)>,
     OpBuilder<(ins "Value":$source, "AffineMap":$source_map,
       "ValueRange":$source_indices,
       "ArrayRef<int64_t>":$source_sizes,
       "Value":$destination, "AffineMap":$dest_map,
       "ValueRange":$dest_indices,
-      "ArrayRef<int64_t>":$dest_sizes)>,
-    OpBuilder<(ins "Value":$source, "Value":$destination), [{
+      "ArrayRef<int64_t>":$dest_sizes,
+      CArg<"TransferMode", "TransferMode::Copy">:$transfer_mode)>,
+    OpBuilder<(ins "Value":$source, "Value":$destination, 
+      CArg<"TransferMode", "TransferMode::Copy">:$transfer_mode), [{
       build($_builder, $_state, 
         source, AffineMap{}, ValueRange{}, ArrayRef<int64_t>{},
-        destination, AffineMap{}, ValueRange{}, ArrayRef<int64_t>{});
+        destination, AffineMap{}, ValueRange{}, ArrayRef<int64_t>{}, 
+        transfer_mode);
     }]>
   ];
 
