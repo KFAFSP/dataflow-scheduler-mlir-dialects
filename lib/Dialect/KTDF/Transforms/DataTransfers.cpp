@@ -103,52 +103,6 @@ struct ReshapeOp : mlir::Op<ReshapeOp> {
   return mixed;
 }
 
-/// Reshapes @p value to @p type , which must have the same number of elements.
-///
-/// Emits nothing if the types match, a single collapse or expand where one
-/// suffices, and otherwise a collapse to 1-D followed by an expand.
-///
-/// @retval nullptr   Shapes are dynamic or have different numbers of elements.
-/// @retval Value     Value after reshaping.
-[[nodiscard]] auto reshapeTo(OpBuilder& builder, Location loc,
-                             TypedValue<RankedTensorType> value,
-                             RankedTensorType type) -> Value {
-  const auto source_type = value.getType();
-  if (source_type == type) {
-    return value;
-  }
-  if (!source_type.hasStaticShape() || !type.hasStaticShape() ||
-      source_type.getNumElements() != type.getNumElements()) {
-    return nullptr;
-  }
-
-  if (const auto reassociation =
-          getReassociationIndicesForReshape(source_type, type);
-      reassociation) {
-    if (source_type.getRank() > type.getRank()) {
-      return tensor::CollapseShapeOp::create(builder, loc, type, value,
-                                             *reassociation);
-    }
-    return tensor::ExpandShapeOp::create(builder, loc, type, value,
-                                         *reassociation);
-  }
-
-  const auto flat_type =
-      RankedTensorType::get({type.getNumElements()}, type.getElementType());
-  Value flat = value;
-  if (source_type.getRank() != 1) {
-    flat = tensor::CollapseShapeOp::create(
-        builder, loc, flat_type, value,
-        {llvm::to_vector(llvm::seq<int64_t>(source_type.getRank()))});
-  }
-  if (type.getRank() == 1) {
-    return flat;
-  }
-  return tensor::ExpandShapeOp::create(
-      builder, loc, type, flat,
-      {llvm::to_vector(llvm::seq<int64_t>(type.getRank()))});
-}
-
 /// Obtains the slice taken by @p op .
 [[nodiscard]] auto getSlice(OffsetSizeAndStrideOpInterface op)
     -> SmallVector<Range> {
@@ -285,6 +239,56 @@ auto TransferAccess::get(MLIRContext* context, ArrayRef<Range> slice)
   result.base_map =
       AffineMap::get(result.indices.size(), 0, map_results, context);
   return std::move(result);
+}
+
+//===----------------------------------------------------------------------===//
+// mlir::ktdf::reshapeTo
+//===----------------------------------------------------------------------===//
+
+auto mlir::ktdf::reshapeTo(OpBuilder& builder, Location loc,
+                           TypedValue<RankedTensorType> value,
+                           ArrayRef<int64_t> shape)
+    -> TypedValue<RankedTensorType> {
+  const auto source_type = value.getType();
+  const auto target_type = source_type.clone(shape);
+  if (source_type == target_type) {
+    return value;
+  }
+  if (!source_type.hasStaticShape() || !target_type.hasStaticShape() ||
+      source_type.getNumElements() != target_type.getNumElements()) {
+    return nullptr;
+  }
+
+  if (const auto reassociation =
+          getReassociationIndicesForReshape(source_type, target_type);
+      reassociation) {
+    if (source_type.getRank() > target_type.getRank()) {
+      return cast<Tensor>(tensor::CollapseShapeOp::create(
+                              builder, loc, target_type, value, *reassociation)
+                              .getResult());
+    }
+    return cast<Tensor>(tensor::ExpandShapeOp::create(builder, loc, target_type,
+                                                      value, *reassociation)
+                            .getResult());
+  }
+
+  Tensor flat = value;
+  if (source_type.getRank() != 1) {
+    const auto flat_type = source_type.clone({target_type.getNumElements()});
+    flat = cast<Tensor>(
+        tensor::CollapseShapeOp::create(
+            builder, loc, flat_type, value,
+            {llvm::to_vector(llvm::seq<int64_t>(source_type.getRank()))})
+            .getResult());
+  }
+  if (target_type.getRank() == 1) {
+    return flat;
+  }
+  return cast<Tensor>(
+      tensor::ExpandShapeOp::create(
+          builder, loc, target_type, flat,
+          {llvm::to_vector(llvm::seq<int64_t>(target_type.getRank()))})
+          .getResult());
 }
 
 //===----------------------------------------------------------------------===//
@@ -500,7 +504,7 @@ struct FoldProducerIntoFifoRead : OpRewritePattern<ReadFromFifoOp> {
 
       // There might be reshaping between these operations.
       const auto reshaped =
-          reshapeTo(rewriter, read.getLoc(), data, result_type);
+          reshapeTo(rewriter, read.getLoc(), data, result_type.getShape());
       if (!reshaped) {
         return rewriter.notifyMatchFailure(read, "dynamic reshape");
       }

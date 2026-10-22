@@ -127,6 +127,18 @@ struct TransferAccess {
   SmallVector<OpFoldResult> sizes;
 };
 
+/// Reshapes @p value to @p shape , which must have the same number of elements.
+///
+/// Emits nothing if the types match, a single collapse or expand where one
+/// suffices, and otherwise a collapse to 1-D followed by an expand.
+///
+/// @retval nullptr   Shapes are dynamic or have different numbers of elements.
+/// @retval Value     Value after reshaping.
+[[nodiscard]] auto reshapeTo(OpBuilder& builder, Location loc,
+                             TypedValue<RankedTensorType> value,
+                             ArrayRef<int64_t> shape)
+    -> TypedValue<RankedTensorType>;
+
 /// Maps @p slice in @p source_shape to @p target_shape .
 ///
 /// A copy transfer moves elements in order, so this mapping ignores unit
