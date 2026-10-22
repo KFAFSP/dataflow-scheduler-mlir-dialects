@@ -19,8 +19,9 @@
 #include "dataflow-scheduler/Dialect/KTDF/Transforms/DataTransfers.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/Sequence.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
@@ -30,6 +31,7 @@
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/AffineExpr.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Dominance.h>
 #include <mlir/IR/Location.h>
@@ -146,6 +148,20 @@ struct ReshapeOp : mlir::Op<ReshapeOp> {
       builder, loc, type, flat,
       {llvm::to_vector(llvm::seq<int64_t>(type.getRank()))});
 }
+
+/// Obtains the slice taken by @p op .
+[[nodiscard]] auto getSlice(OffsetSizeAndStrideOpInterface op)
+    -> SmallVector<Range> {
+  return llvm::map_to_vector(
+      llvm::zip_equal(op.getMixedOffsets(), op.getMixedSizes(),
+                      op.getMixedStrides()),
+      [](auto range) -> Range {
+        auto [offset, size, stride] = range;
+        return {offset, size, stride};
+      });
+}
+
+void alwaysSucceeds(LogicalResult result) { assert(succeeded(result)); }
 
 }  // namespace
 
@@ -268,6 +284,54 @@ auto TransferAccess::get(MLIRContext* context, ArrayRef<Range> slice)
 
   result.base_map =
       AffineMap::get(result.indices.size(), 0, map_results, context);
+  return std::move(result);
+}
+
+//===----------------------------------------------------------------------===//
+// mlir::ktdf::mapSliceOfCopy
+//===----------------------------------------------------------------------===//
+
+auto mlir::ktdf::mapSliceOfCopy(Builder& builder, ArrayRef<Range> slice,
+                                ArrayRef<int64_t> source_shape,
+                                ArrayRef<int64_t> target_shape)
+    -> FailureOr<SmallVector<Range>> {
+  assert(source_shape.size() == slice.size());
+
+  SmallVector<Range> result;
+  const Range unit{builder.getIndexAttr(0), builder.getIndexAttr(1),
+                   builder.getIndexAttr(1)};
+  const auto* source_it = source_shape.begin();
+  const auto* slice_it = slice.begin();
+  for (const auto target : target_shape) {
+    if (ShapedType::isDynamic(target)) {
+      return failure();
+    }
+    if (target == 1) {
+      result.push_back(unit);
+      continue;
+    }
+    while (true) {
+      if (source_it == source_shape.end()) {
+        return failure();
+      }
+      if (*source_it != 1) {
+        break;
+      }
+      ++source_it;
+      ++slice_it;
+    }
+    if (*source_it != target) {
+      return failure();
+    }
+    result.push_back(*slice_it);
+    ++source_it;
+    ++slice_it;
+  }
+  if (llvm::any_of(llvm::make_range(source_it, source_shape.end()),
+                   [](int64_t source) { return source != 1; })) {
+    return failure();
+  }
+
   return std::move(result);
 }
 
@@ -568,9 +632,8 @@ struct FoldExtractSliceIntoFifoRead : OpRewritePattern<tensor::ExtractSliceOp> {
     // The slice moves to the write, and the read takes its place.
     rewriter.replaceAllUsesWith(extract.getResult(), read.getResult());
     rewriter.moveOpBefore(extract, write);
-    rewriter.modifyOpInPlace(extract, [&]() {
-      extract.getSourceMutable().assign(write.getData());
-    });
+    rewriter.modifyOpInPlace(
+        extract, [&]() { extract.getSourceMutable().assign(write.getData()); });
     rewriter.modifyOpInPlace(
         write, [&]() { write.getDataMutable().assign(extract.getResult()); });
     alloc.resize(rewriter,
@@ -662,54 +725,187 @@ struct FoldSubViewIntoTransfer : OpRewritePattern<DataTransferOp> {
     return success();
   }
 
- private:
-  [[nodiscard]] static auto foldSide(PatternRewriter& rewriter, OpOperand& side)
-      -> LogicalResult {
+  /// Attempts to fold @p slice into a memory @p side of a copy transfer.
+  ///
+  /// @pre  `isa<MemRef>(side.get())`
+  /// @pre  `isa<DataTransferOp>(side.getOwner())`
+  /// @pre  `transfer.getTransferMode() == TransferMode::Copy`
+  [[nodiscard]] static auto foldSide(OpBuilder& builder, OpOperand& side,
+                                     ArrayRef<Range> view) -> LogicalResult {
     auto transfer = cast<DataTransferOp>(side.getOwner());
-    auto subview = side.get().getDefiningOp<memref::SubViewOp>();
-    if (!isa<MemRef>(side.get()) || !subview ||
-        subview.getSourceType().getRank() != subview.getType().getRank()) {
-      return failure();
-    }
+    assert(transfer.getTransferMode() == TransferMode::Copy);
+    assert(isa<MemRef>(side.get()));
 
     // The merged access must stay contiguous. Checked before building any IR.
     const auto sizes = transfer.getTiedSizes(&side);
-    for (auto [size, stride] :
-         llvm::zip_equal(sizes, subview.getMixedStrides())) {
-      if (!isConstantIntValue(stride, 1) && !isConstantIntValue(size, 1)) {
+    for (auto [size, range] : llvm::zip_equal(sizes, view)) {
+      if (!isConstantIntValue(range.stride, 1) &&
+          !isConstantIntValue(size, 1)) {
         return failure();
       }
     }
 
-    const auto [base_map, indices] = transfer.getTiedOffset(&side);
-
     // The transfer reads its sizes contiguously from its offsets, which the
-    // subview places at its offsets and scales by its strides.
+    // view places at its offsets and scales by its strides.
+    const auto [base_map, indices] = transfer.getTiedOffset(&side);
     const auto offsets = affine::makeComposedFoldedMultiResultAffineApply(
-        rewriter, transfer.getLoc(), base_map, getAsOpFoldResult(indices));
-    AffineExpr subview_offset, subview_stride, offset;
-    bindSymbols(rewriter.getContext(), subview_offset, subview_stride, offset);
+        builder, transfer.getLoc(), base_map, getAsOpFoldResult(indices));
+    AffineExpr view_offset, view_stride, offset;
+    bindSymbols(builder.getContext(), view_offset, view_stride, offset);
     const auto slice = llvm::map_to_vector(
-        llvm::zip_equal(subview.getMixedOffsets(), subview.getMixedStrides(),
-                        offsets, sizes),
-        [&](auto dim) -> Range {
-          auto [subview_offset_value, subview_stride_value, offset_value,
-                size] = dim;
-          return {
-              affine::makeComposedFoldedAffineApply(
-                  rewriter, transfer.getLoc(),
-                  subview_offset + subview_stride * offset,
-                  {subview_offset_value, subview_stride_value, offset_value}),
-              size, subview_stride_value};
+        llvm::zip_equal(view, offsets, sizes), [&](auto dim) -> Range {
+          auto [range, offset_value, size] = dim;
+          return {affine::makeComposedFoldedAffineApply(
+                      builder, transfer.getLoc(),
+                      view_offset + view_stride * offset,
+                      {range.offset, range.stride, offset_value}),
+                  size, range.stride};
         });
-    auto access = TransferAccess::get(rewriter.getContext(), slice);
+    auto access = TransferAccess::get(builder.getContext(), slice);
     assert(succeeded(access) && "contiguity was checked above");
 
-    side.assign(subview.getSource());
     transfer.setTiedOffset(&side, access->base_map, access->indices);
+    return success();
+  }
+
+  /// Narrows a copying fill or drain of a FIFO from @p buffer_side .
+  ///
+  /// @pre  `isa<MemRef>(side.get())`
+  /// @pre  `isa<DataTransferOp>(side.getOwner())`
+  /// @pre  `transfer.getTransferMode() == TransferMode::Copy`
+  [[nodiscard]] static auto narrowCopyFillDrain(OpBuilder& builder,
+                                                OpOperand& buffer_side,
+                                                ArrayRef<Range> slice,
+                                                ArrayRef<int64_t> slice_shape)
+      -> LogicalResult {
+    auto transfer = cast<DataTransferOp>(buffer_side.getOwner());
+    assert(transfer.getTransferMode() == TransferMode::Copy);
+    assert(isa<MemRef>(buffer_side.get()));
+
+    const auto is_source = &buffer_side == &transfer.getSourceMutable();
+    const auto region =
+        getConstantIntValues(transfer.getTiedSizes(&buffer_side));
+    if (!region) {
+      return failure();
+    }
+    const auto mapped = mapSliceOfCopy(builder, slice, slice_shape, *region);
+    if (failed(mapped)) {
+      return failure();
+    }
+
+    SmallVector<int64_t> sizes;
+    int64_t num_elements = 1;
+    for (const auto range : *mapped) {
+      const auto size = getConstantIntValue(range.size);
+      if (!size || (!isConstantIntValue(range.stride, 1) && size != 1) ||
+          !areAvailable({range.offset, range.stride}, transfer)) {
+        return failure();
+      }
+
+      sizes.push_back(*size);
+      num_elements *= *size;
+    }
+
+    if (is_source) {
+      transfer.setStaticSourceSizes(sizes);
+      transfer.setStaticDestSizes({num_elements});
+      alwaysSucceeds(foldSide(builder, transfer.getSourceMutable(), *mapped));
+    } else {
+      transfer.setStaticDestSizes(sizes);
+      transfer.setStaticSourceSizes({num_elements});
+      alwaysSucceeds(
+          foldSide(builder, transfer.getDestinationMutable(), *mapped));
+    }
+
+    return success();
+  }
+
+ private:
+  [[nodiscard]] static auto foldSide(PatternRewriter& rewriter, OpOperand& side)
+      -> LogicalResult {
+    auto subview = side.get().getDefiningOp<memref::SubViewOp>();
+    if (!isa<MemRef>(side.get()) || !subview ||
+        subview.getSourceType().getRank() != subview.getType().getRank() ||
+        failed(foldSide(rewriter, side, getSlice(subview)))) {
+      return failure();
+    }
+
+    side.assign(subview.getSource());
     if (subview->use_empty()) {
       rewriter.eraseOp(subview);
     }
+    return success();
+  }
+};
+
+/// Folds `tensor.extract_slice` of a `ktdf.read_from_fifo` into the fill.
+struct FoldExtractSliceIntoFifoFill : OpRewritePattern<tensor::ExtractSliceOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  auto matchAndRewrite(tensor::ExtractSliceOp extract,
+                       PatternRewriter& rewriter) const
+      -> LogicalResult override {
+    auto read = extract.getSource().getDefiningOp<ReadFromFifoOp>();
+    if (!read || !read->hasOneUse() || read.getSplat() ||
+        !extract.getType().hasStaticShape()) {
+      return rewriter.notifyMatchFailure(extract,
+                                         "not a static slice of a read");
+    }
+    auto alloc = FifoSlotAllocation::get(read.getFifoSlot());
+    auto* const producer = alloc ? alloc.getProducer() : nullptr;
+    auto transfer =
+        producer ? dyn_cast<DataTransferOp>(producer->getOwner()) : nullptr;
+    if (!transfer || !isa<MemRef>(transfer.getSource()) ||
+        transfer.getTransferMode() != TransferMode::Copy) {
+      return rewriter.notifyMatchFailure(read, "not filled by a copy");
+    }
+    if (failed(FoldSubViewIntoTransfer::narrowCopyFillDrain(
+            rewriter, transfer.getSourceMutable(), getSlice(extract),
+            extract.getSourceType().getShape()))) {
+      return rewriter.notifyMatchFailure(extract, "not a slice of the copy");
+    }
+
+    alloc.resize(rewriter,
+                 rewriter.getIndexAttr(extract.getType().getNumElements()));
+    rewriter.modifyOpInPlace(
+        read, [&]() { read.getResult().setType(extract.getType()); });
+    rewriter.replaceOp(extract, read.getResult());
+    return success();
+  }
+};
+
+/// Folds `tensor.insert_slice` into a `ktdf.write_to_fifo` into the drain.
+struct FoldInsertSliceIntoFifoDrain : OpRewritePattern<WriteToFifoOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  auto matchAndRewrite(WriteToFifoOp write, PatternRewriter& rewriter) const
+      -> LogicalResult override {
+    auto insert = write.getData().getDefiningOp<tensor::InsertSliceOp>();
+    if (!insert || !insert->hasOneUse() ||
+        !insert.getDest().getDefiningOp<tensor::EmptyOp>() ||
+        !insert.getSourceType().hasStaticShape()) {
+      return rewriter.notifyMatchFailure(write,
+                                         "not a static slice of an empty");
+    }
+    auto alloc = FifoSlotAllocation::get(write.getFifoSlot());
+    auto* const consumer = alloc ? alloc.getConsumer() : nullptr;
+    auto transfer =
+        consumer ? dyn_cast<DataTransferOp>(consumer->getOwner()) : nullptr;
+    if (!transfer || !isa<MemRef>(transfer.getDestination()) ||
+        transfer.getTransferMode() != TransferMode::Copy) {
+      return rewriter.notifyMatchFailure(write, "not drained by a copy");
+    }
+    if (failed(FoldSubViewIntoTransfer::narrowCopyFillDrain(
+            rewriter, transfer.getDestinationMutable(), getSlice(insert),
+            insert.getDestType().getShape()))) {
+      return rewriter.notifyMatchFailure(insert, "not a slice of the copy");
+    }
+
+    alloc.resize(rewriter, rewriter.getIndexAttr(
+                               insert.getSourceType().getNumElements()));
+    rewriter.modifyOpInPlace(
+        write, [&]() { write.getDataMutable().assign(insert.getSource()); });
+    rewriter.eraseOp(insert);
     return success();
   }
 };
@@ -721,6 +917,7 @@ void mlir::ktdf::populateDataMovementCoalescingPatterns(
   patterns.add<FoldReshapeIntoFifoRead, FoldReshapeIntoFifoWrite,
                FoldProducerIntoFifoRead, FoldDataTransferRelay,
                FoldExtractSliceIntoFifoRead, FoldInsertSliceIntoFifoWrite,
-               FoldSubViewIntoTransfer>(patterns.getContext());
+               FoldSubViewIntoTransfer, FoldExtractSliceIntoFifoFill,
+               FoldInsertSliceIntoFifoDrain>(patterns.getContext());
   DataTransferOp::getCanonicalizationPatterns(patterns, patterns.getContext());
 }

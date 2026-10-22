@@ -127,6 +127,18 @@ struct TransferAccess {
   SmallVector<OpFoldResult> sizes;
 };
 
+/// Maps @p slice in @p source_shape to @p target_shape .
+///
+/// A copy transfer moves elements in order, so this mapping ignores unit
+/// dimensions, but only works on statically known shapes.
+///
+/// @retval failure   Shapes are dynamic or differ in non-unit sizes.
+/// @retval Slice     @p slice in @p target_shape .
+[[nodiscard]] auto mapSliceOfCopy(Builder& builder, ArrayRef<Range> slice,
+                                  ArrayRef<int64_t> source_shape,
+                                  ArrayRef<int64_t> target_shape)
+    -> FailureOr<SmallVector<Range>>;
+
 /// Determines whether any op between @p begin and @p end has write effects.
 ///
 /// If any op between @p begin and @p end might have a write side effect,
@@ -157,10 +169,12 @@ struct TransferAccess {
 ///  - Folds `tensor.(collapse|expand)_shape` into `ktdf.read_from_fifo`.
 ///  - Folds `tensor.(collapse|expand)_shape` into `ktdf.write_to_fifo`.
 ///  - Folds the producer into a `ktdf.read_from_fifo`.
+///  - Folds two `ktdf.data_transfer` ops together.
 ///  - Folds `tensor.extract_slice` of a `ktdf.read_from_fifo` into the write.
 ///  - Folds `tensor.insert_slice` into a `ktdf.write_to_fifo` into the read.
+///  - Folds `tensor.extract_slice` of a `ktdf.read_from_fifo` into the fill.
+///  - Folds `tensor.insert_slice` into a `ktdf.write_to_fifo` into the drain.
 ///  - Folds `memref.subview` into a copy `ktdf.data_transfer`.
-///  - Folds two `ktdf.data_transfer` ops together.
 void populateDataMovementCoalescingPatterns(RewritePatternSet& patterns);
 
 }  // namespace mlir::ktdf
