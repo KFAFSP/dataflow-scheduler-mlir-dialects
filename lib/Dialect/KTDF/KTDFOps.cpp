@@ -27,8 +27,10 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/LogicalResult.h>
+#include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Attributes.h>
@@ -893,6 +895,88 @@ void DataTransferOp::build(OpBuilder& builder, OperationState& state,
         destination, dest_map, dest_indices, dest_size_values, transfer_mode);
 }
 
+namespace {
+
+struct CanonicalizeTransferOffset : OpRewritePattern<DataTransferOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  auto matchAndRewrite(DataTransferOp transfer, PatternRewriter& rewriter) const
+      -> LogicalResult override {
+    rewriter.startOpModification(transfer);
+    const auto source = foldSide(rewriter, transfer.getSourceMutable());
+    const auto dest = foldSide(rewriter, transfer.getDestinationMutable());
+    if (failed(source) && failed(dest)) {
+      rewriter.cancelOpModification(transfer);
+      return failure();
+    }
+    rewriter.finalizeOpModification(transfer);
+    return success();
+  }
+
+ private:
+  static auto foldSide(RewriterBase& rewriter, OpOperand& side)
+      -> LogicalResult {
+    auto transfer = cast<DataTransferOp>(side.getOwner());
+    const auto [map, indices] = transfer.getTiedOffset(&side);
+    auto new_map = map;
+    SmallVector<Value> new_indices(indices);
+    affine::fullyComposeAffineMapAndOperands(&new_map, &new_indices);
+    affine::canonicalizeMapAndOperands(&new_map, &new_indices);
+
+    // The data transfer only allows dims, so turn the symbols back into dims.
+    const auto dims = llvm::map_to_vector(
+        llvm::iota_range<unsigned>(0, new_map.getNumDims(), false),
+        [&](unsigned dim) { return rewriter.getAffineDimExpr(dim); });
+    const auto symbols = llvm::map_to_vector(
+        llvm::iota_range<unsigned>(0, new_map.getNumSymbols(), false),
+        [&](unsigned symbol) {
+          return rewriter.getAffineDimExpr(dims.size() + symbol);
+        });
+    new_map = new_map.replaceDimsAndSymbols(dims, symbols,
+                                            dims.size() + symbols.size(), 0);
+    if (new_map == map && llvm::equal(new_indices, indices)) {
+      return failure();
+    }
+    transfer.setTiedOffset(&side, new_map, new_indices);
+    return success();
+  }
+};
+
+struct FoldStaticSizeIntoTransfer : OpRewritePattern<DataTransferOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  auto matchAndRewrite(DataTransferOp transfer, PatternRewriter& rewriter) const
+      -> LogicalResult override {
+    rewriter.startOpModification(transfer);
+    const auto source = foldSide(transfer.getSourceMutable());
+    const auto dest = foldSide(transfer.getDestinationMutable());
+    if (failed(source) && failed(dest)) {
+      rewriter.cancelOpModification(transfer);
+      return failure();
+    }
+    rewriter.finalizeOpModification(transfer);
+    return success();
+  }
+
+ private:
+  static auto foldSide(OpOperand& side) -> LogicalResult {
+    auto transfer = cast<DataTransferOp>(side.getOwner());
+    auto sizes = transfer.getTiedSizes(&side);
+    if (failed(foldDynamicIndexList(sizes, /*onlyNonNegative=*/true))) {
+      return failure();
+    }
+    transfer.setTiedSizes(&side, sizes);
+    return success();
+  }
+};
+
+}  // namespace
+
+void DataTransferOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                                 MLIRContext* context) {
+  results.add<CanonicalizeTransferOffset, FoldStaticSizeIntoTransfer>(context);
+}
+
 void DataTransferOp::getEffects(
     SmallVectorImpl<MemoryEffects::EffectInstance>& effects) {
   if (isSourceFifo()) {
@@ -913,6 +997,80 @@ void DataTransferOp::getEffects(
   } else {
     effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
   }
+}
+
+auto DataTransferOp::getTiedOffset(OpOperand* side)
+    -> std::tuple<AffineMap, OperandRange> {
+  if (side == &getSourceMutable()) {
+    return {getSourceMap().value_or(AffineMap::get(getContext())),
+            getSourceIndices()};
+  }
+
+  assert(side == &getDestinationMutable());
+  return {getDestMap().value_or(AffineMap::get(getContext())),
+          getDestIndices()};
+}
+
+void DataTransferOp::setTiedOffset(OpOperand* side, AffineMap base_map,
+                                   ValueRange indices) {
+  if (side == &getSourceMutable()) {
+    setSourceMap(base_map);
+    getSourceIndicesMutable().assign(indices);
+    return;
+  }
+
+  assert(side == &getDestinationMutable());
+  setDestMap(base_map);
+  getDestIndicesMutable().assign(indices);
+}
+
+auto DataTransferOp::getTiedSizes(OpOperand* side)
+    -> SmallVector<OpFoldResult> {
+  if (side == &getSourceMutable()) {
+    return getMixedSourceSizes();
+  }
+
+  assert(side == &getDestinationMutable());
+  return getMixedDestSizes();
+}
+
+void DataTransferOp::setTiedSizes(OpOperand* side,
+                                  ArrayRef<OpFoldResult> sizes) {
+  const auto [static_sizes, dynamic_sizes] = decomposeMixedValues(sizes);
+
+  if (side == &getSourceMutable()) {
+    setStaticSourceSizes(static_sizes);
+    getSourceSizesMutable().assign(dynamic_sizes);
+    return;
+  }
+
+  assert(side == &getDestinationMutable());
+  setStaticDestSizes(static_sizes);
+  getDestSizesMutable().assign(dynamic_sizes);
+}
+
+namespace {
+
+[[nodiscard]] auto getMixedSizes(std::optional<ArrayRef<int64_t>> static_sizes,
+                                 ValueRange dynamic_sizes, MLIRContext* context)
+    -> SmallVector<OpFoldResult> {
+  if (!static_sizes) {
+    // FIXME: Determine if unsized transfers are actually legal. Maybe, convert
+    //        them to their canonical representation on parsing.
+    return getAsOpFoldResult(dynamic_sizes);
+  }
+
+  return getMixedValues(*static_sizes, dynamic_sizes, context);
+}
+
+}  // namespace
+
+auto DataTransferOp::getMixedSourceSizes() -> SmallVector<OpFoldResult> {
+  return getMixedSizes(getStaticSourceSizes(), getSourceSizes(), getContext());
+}
+
+auto DataTransferOp::getMixedDestSizes() -> SmallVector<OpFoldResult> {
+  return getMixedSizes(getStaticDestSizes(), getDestSizes(), getContext());
 }
 
 //===----------------------------------------------------------------------===//

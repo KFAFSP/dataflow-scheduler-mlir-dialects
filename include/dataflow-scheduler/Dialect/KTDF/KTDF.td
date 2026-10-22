@@ -714,6 +714,7 @@ def KTDF_DataTransferOp : KTDF_Op<"data_transfer", [
   );
 
   let hasVerifier = 1;
+  let hasCanonicalizer = 1;
 
   let assemblyFormat = [{
     `from` custom<CellOrSlot>($source, $source_indices, $source_map, $source_sizes, $static_source_sizes) 
@@ -776,48 +777,22 @@ def KTDF_DataTransferOp : KTDF_Op<"data_transfer", [
         return TransferType::MemRefToFifo;
       return TransferType::FifoToMemRef;
     }
-    
+
+    /// Gets the base map and indices for the given @p side .
+    [[nodiscard]] auto getTiedOffset(OpOperand* side)
+      -> std::tuple<AffineMap, OperandRange>;
+    /// Sets the base map and indices for the given @p side .
+    void setTiedOffset(OpOperand* side, AffineMap base_map, ValueRange indices);
+
+    /// Gets the mixed sizes for @p side .
+    [[nodiscard]] auto getTiedSizes(OpOperand* side) -> SmallVector<OpFoldResult>;
+    /// Sets the mixed sizes for @p side .
+    void setTiedSizes(OpOperand* side, ArrayRef<OpFoldResult> sizes);
+
     /// Get the mixed source sizes (combining static and dynamic)
-    SmallVector<OpFoldResult> getMixedSourceSizes() {
-      SmallVector<OpFoldResult> result;
-      if (auto staticSizes = getStaticSourceSizes()) {
-        unsigned dynamicIdx = 0;
-        for (int64_t size : *staticSizes) {
-          if (ShapedType::isDynamic(size)) {
-            result.push_back(getSourceSizes()[dynamicIdx++]);
-          } else {
-            result.push_back(IntegerAttr::get(IndexType::get(getContext()), size));
-          }
-        }
-      } else {
-        // All dynamic
-        for (Value size : getSourceSizes()) {
-          result.push_back(size);
-        }
-      }
-      return result;
-    }
-    
+    [[nodiscard]] auto getMixedSourceSizes() -> SmallVector<OpFoldResult>;
     /// Get the mixed destination sizes (combining static and dynamic)
-    SmallVector<OpFoldResult> getMixedDestSizes() {
-      SmallVector<OpFoldResult> result;
-      if (auto staticSizes = getStaticDestSizes()) {
-        unsigned dynamicIdx = 0;
-        for (int64_t size : *staticSizes) {
-          if (ShapedType::isDynamic(size)) {
-            result.push_back(getDestSizes()[dynamicIdx++]);
-          } else {
-            result.push_back(IntegerAttr::get(IndexType::get(getContext()), size));
-          }
-        }
-      } else {
-        // All dynamic
-        for (Value size : getDestSizes()) {
-          result.push_back(size);
-        }
-      }
-      return result;
-    }
+    [[nodiscard]] auto getMixedDestSizes() -> SmallVector<OpFoldResult>; 
     
     /// Returns true if all source sizes are static (compile-time constants)
     bool hasAllStaticSourceSizes() {

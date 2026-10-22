@@ -22,9 +22,12 @@
 #include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
+#include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/Utils/ReshapeOpsUtils.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/AffineExpr.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Dominance.h>
@@ -225,6 +228,46 @@ void FifoSlotAllocation::resize(RewriterBase& rewriter,
           .setType(getType());
     }
   }
+}
+
+//===----------------------------------------------------------------------===//
+// TransferAccess
+//===----------------------------------------------------------------------===//
+
+auto TransferAccess::get(MLIRContext* context, ArrayRef<Range> slice)
+    -> FailureOr<TransferAccess> {
+  TransferAccess result;
+
+  // Each distinct value becomes one dimension.
+  const auto get_dim = [&](Value value) -> AffineExpr {
+    if (auto* const it = llvm::find(result.indices, value);
+        it != result.indices.end()) {
+      return getAffineDimExpr(std::distance(result.indices.begin(), it),
+                              context);
+    }
+    result.indices.push_back(value);
+    return getAffineDimExpr(result.indices.size() - 1, context);
+  };
+
+  SmallVector<AffineExpr> map_results;
+  for (const auto& range : slice) {
+    if (!isConstantIntValue(range.stride, 1) &&
+        !isConstantIntValue(range.size, 1)) {
+      // Slice is non-contiguous.
+      return failure();
+    }
+    result.sizes.push_back(range.size);
+
+    if (const auto value = getConstantIntValue(range.offset); value) {
+      map_results.push_back(getAffineConstantExpr(*value, context));
+    } else {
+      map_results.push_back(get_dim(cast<Value>(range.offset)));
+    }
+  }
+
+  result.base_map =
+      AffineMap::get(result.indices.size(), 0, map_results, context);
+  return std::move(result);
 }
 
 //===----------------------------------------------------------------------===//

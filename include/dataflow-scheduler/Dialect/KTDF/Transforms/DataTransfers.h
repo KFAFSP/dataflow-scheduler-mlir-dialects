@@ -19,6 +19,9 @@
 #ifndef DATAFLOW_SCHEDULER_DIALECT_KTDF_TRANSFORMS_DATATRANSFERS_H_
 #define DATAFLOW_SCHEDULER_DIALECT_KTDF_TRANSFORMS_DATATRANSFERS_H_
 
+#include <mlir/IR/AffineMap.h>
+#include <mlir/Interfaces/ViewLikeInterface.h>
+
 #include "dataflow-scheduler/Dialect/KTDF/KTDF.h"
 
 namespace mlir {
@@ -107,6 +110,23 @@ struct FifoSlotAllocation : OpResult {
   void resize(RewriterBase& rewriter, OpFoldResult num_elements);
 };
 
+/// Describes the memory side of a `ktdf.data_transfer`.
+struct TransferAccess {
+  /// Creates a TransferAccess for @p slice .
+  ///
+  /// A transfer must always access contiguous memory, so a dim of @p slice may
+  /// ony have a non-unit stride if its size is statically known to be 1.
+  ///
+  /// @retval failure         Non-contiguous @p slice .
+  /// @retval TransferAccess  Memory side of a `ktdf.data_transfer`.
+  [[nodiscard]] static auto get(MLIRContext* context, ArrayRef<Range> slice)
+      -> FailureOr<TransferAccess>;
+
+  AffineMap base_map;
+  SmallVector<Value> indices;
+  SmallVector<OpFoldResult> sizes;
+};
+
 /// Determines whether any op between @p begin and @p end has write effects.
 ///
 /// If any op between @p begin and @p end might have a write side effect,
@@ -139,6 +159,7 @@ struct FifoSlotAllocation : OpResult {
 ///  - Folds the producer into a `ktdf.read_from_fifo`.
 ///  - Folds `tensor.extract_slice` of a `ktdf.read_from_fifo` into the write.
 ///  - Folds `tensor.insert_slice` into a `ktdf.write_to_fifo` into the read.
+///  - Folds `memref.subview` into a copy `ktdf.data_transfer`.
 ///  - Folds two `ktdf.data_transfer` ops together.
 void populateDataMovementCoalescingPatterns(RewritePatternSet& patterns);
 
