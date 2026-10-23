@@ -466,7 +466,11 @@ auto PipelineBuilder::insert(Operation* op, Placement placement)
   }
 
   // Forward all results of this operation to their in-pipeline users.
-  for (auto result : results_to_forward) {
+  // In reverse: each send() creates its write ahead of the writes already in the
+  // producer stage, and the scheduler's allocator numbers the newest slot first,
+  // so the last result sent has its write first and the lowest slot. Sending
+  // result #0 last therefore gives writes and slots in result order.
+  for (auto result : llvm::reverse(results_to_forward)) {
     for (auto& use : result.getUses()) {
       auto stage = use.getOwner()->getParentOfType<StageOp>();
       assert(stage && "user outside of pipeline");
