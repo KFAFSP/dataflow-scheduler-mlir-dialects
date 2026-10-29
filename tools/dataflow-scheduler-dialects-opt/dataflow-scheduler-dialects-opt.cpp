@@ -37,9 +37,14 @@
 
 using namespace mlir;
 
+namespace mlir::ktdf::test {
+void registerTestDataMovementCoalescingPass();
+}  // namespace mlir::ktdf::test
+
 auto main(int argc, char** argv) -> int {
   registerAllPasses();
   ktdf_arch::registerKTDFArchPasses();
+  ktdf::test::registerTestDataMovementCoalescingPass();
 
   DialectRegistry registry;
   registry.insert<agen::AgenDialect, dataflow::DataflowDialect,

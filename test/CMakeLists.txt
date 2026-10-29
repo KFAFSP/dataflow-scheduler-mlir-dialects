@@ -1,3 +1,5 @@
+add_subdirectory(lib)
+
 llvm_canonicalize_cmake_booleans(
   DataflowSchedulerDialects_ENABLE_PYTHON_BINDINGS
   DataflowSchedulerDialects_BUILD_TOOLS

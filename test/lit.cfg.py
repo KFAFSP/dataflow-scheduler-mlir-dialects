@@ -39,7 +39,7 @@ config.substitutions.extend(
 llvm_config.with_system_environment(["HOME", "INCLUDE", "LIB", "TMP", "TEMP"])
 llvm_config.use_default_substitutions()
 
-config.excludes = ["Inputs", "CMakeLists.txt"]
+config.excludes = ["Inputs", "lib", "CMakeLists.txt"]
 
 tools = ["dataflow-scheduler-dialects-opt", "FileCheck", "not"]
 tool_dirs = [config.dataflow_scheduler_tools_dir, config.llvm_tools_dir]

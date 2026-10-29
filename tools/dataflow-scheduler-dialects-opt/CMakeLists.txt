@@ -14,6 +14,7 @@ target_link_libraries(dataflow-scheduler-dialects-opt PRIVATE
   ${_dialect_libs}
   ${_extension_libs}
   ${_conversion_libs}
+  DataflowSchedulerDialectsTestKTDF
 )
 
 mlir_target_link_libraries(dataflow-scheduler-dialects-opt PRIVATE
